@@ -4,23 +4,30 @@ import os
 
 let log = Logger(subsystem: "com.chuyeow.mako", category: "browser")
 
-/// Offers ⌘-shortcuts to the main menu before the focused web view, which otherwise
-/// eats them while its web process is busy or starting, and lets pages hijack ⌘W/⌘L.
+/// Offers only Mako-owned ⌘-shortcuts to the main menu first so pages cannot hijack
+/// tab and omnibox controls. Editing and navigation shortcuts keep AppKit's order.
 final class MenuFirstWindow: NSWindow {
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        NSApp.mainMenu?.performKeyEquivalent(with: event) == true || super.performKeyEquivalent(with: event)
+        if event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
+           let key = event.charactersIgnoringModifiers,
+           ["t", "w", "l", ",", "1", "2", "3", "4", "5", "6", "7", "8", "9"].contains(key),
+           NSApp.mainMenu?.performKeyEquivalent(with: event) == true {
+            return true
+        }
+        return super.performKeyEquivalent(with: event)
     }
 }
 
 /// One window, a few tabs, no tab bar. ⌘L summons the omnibox, which also lists tabs.
 @MainActor
-final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate, NSTextFieldDelegate {
+final class Browser: NSObject, NSWindowDelegate, NSMenuDelegate, WKNavigationDelegate, WKUIDelegate, NSTextFieldDelegate {
     let window: NSWindow
     private var tabs: [WKWebView] = []
     private var active = 0
     private var observations: [NSKeyValueObservation] = []
     private let webConfig = WKWebViewConfiguration()
     private let container = NSView()
+    private let blank = NSImageView()
     private let omnibox = NSGlassEffectView()
     private let field = NSTextField()
     private let hint = NSTextField(labelWithString: "")
@@ -32,8 +39,24 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
             backing: .buffered, defer: false)
         super.init()
         window.delegate = self
+        window.tabbingMode = .disallowed
         window.setFrameAutosaveName("main")
         window.contentView = container
+        container.setAccessibilityIdentifier("mako.page")
+        container.setAccessibilityLabel("Page")
+        blank.setAccessibilityIdentifier("mako.blank")
+        blank.setAccessibilityLabel("New tab")
+        blank.image = NSApp.applicationIconImage
+        blank.imageScaling = .scaleProportionallyUpOrDown
+        blank.alphaValue = 0.9
+        blank.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(blank)
+        NSLayoutConstraint.activate([
+            blank.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+            blank.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            blank.widthAnchor.constraint(equalToConstant: 128),
+            blank.heightAnchor.constraint(equalToConstant: 128),
+        ])
         webConfig.preferences.isElementFullscreenEnabled = true
         buildOmnibox()
         newTab()
@@ -43,11 +66,25 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
 
     private var web: WKWebView { tabs[active] }
     /// Current page, ignoring the blank/block/error pages Mako loads itself.
-    private var pageURL: URL? { web.url?.absoluteString == "about:blank" ? nil : web.url }
+    private var pageURL: URL? {
+        guard let url = web.url, ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { return nil }
+        return url
+    }
+
+    private func tabLabel(_ webView: WKWebView) -> String {
+        if let title = webView.title, !title.isEmpty { return title }
+        return webView.url?.host() ?? "New Tab"
+    }
 
     // MARK: Omnibox
 
     private func buildOmnibox() {
+        omnibox.setAccessibilityIdentifier("mako.omnibox")
+        omnibox.setAccessibilityLabel("Address bar")
+        field.setAccessibilityIdentifier("mako.omnibox.field")
+        field.setAccessibilityLabel("Address or search")
+        hint.setAccessibilityIdentifier("mako.omnibox.status")
+        hint.setAccessibilityLabel("Tabs and status")
         field.isBordered = false
         field.drawsBackground = false
         field.focusRingType = .none
@@ -79,15 +116,19 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
 
     func showOmnibox(text: String? = nil, message: String? = nil) {
         field.stringValue = text ?? pageURL?.absoluteString ?? ""
-        let tabList = tabs.enumerated().map { i, t in
-            "\(i == active ? "▸" : " ")⌘\(i + 1) \(t.title?.isEmpty == false ? t.title! : t.url?.host() ?? "new tab")"
-        }
-        hint.stringValue = ([message ?? Core.configError].compactMap { $0 } + tabList + ["\(tabs.count)/\(Core.maxTabs) tabs"])
-            .joined(separator: "\n")
+        updateHint(message: message)
         omnibox.isHidden = false
         container.addSubview(omnibox, positioned: .above, relativeTo: nil)
         window.makeFirstResponder(field)
         field.currentEditor()?.selectAll(nil)
+    }
+
+    private func updateHint(message: String? = nil) {
+        let tabList = tabs.enumerated().map { i, t in
+            "\(i == active ? "▸" : " ")⌘\(i + 1) \(tabLabel(t))"
+        }
+        hint.stringValue = ([message ?? Core.configError].compactMap { $0 } + tabList + ["\(tabs.count)/\(Core.maxTabs) tabs"])
+            .joined(separator: "\n")
     }
 
     private func hideOmnibox() {
@@ -123,8 +164,13 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         w.uiDelegate = self
         w.allowsBackForwardNavigationGestures = true
         w.allowsMagnification = true
-        observations += [w.observe(\.title) { [weak self] _, _ in MainActor.assumeIsolated { self?.updateTitle() } }]
+        observations += [
+            w.observe(\.title) { [weak self] _, _ in MainActor.assumeIsolated { self?.updateTabPresentation() } },
+            w.observe(\.url) { [weak self] _, _ in MainActor.assumeIsolated { self?.updateTabPresentation() } },
+            w.observe(\.isLoading) { [weak self] _, _ in MainActor.assumeIsolated { self?.updateTabPresentation() } },
+        ]
         tabs.append(w)
+        updateTabIdentifiers()
         select(tabs.count - 1)
         return true
     }
@@ -136,13 +182,37 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         web.frame = container.bounds
         web.autoresizingMask = [.width, .height]
         container.addSubview(web, positioned: .below, relativeTo: omnibox)
+        updateTabPresentation()
         window.makeFirstResponder(omnibox.isHidden ? web : field)
-        updateTitle()
     }
 
-    private func updateTitle() {
-        window.title = web.title?.isEmpty == false ? web.title! : "Mako"
+    private func updateTabPresentation() {
+        guard !tabs.isEmpty else { return }
+        window.title = tabLabel(web)
         window.subtitle = "\(active + 1)/\(tabs.count)"
+        let isBlank = web.url == nil && !web.isLoading
+        blank.isHidden = !isBlank
+        web.isHidden = isBlank
+        if !omnibox.isHidden { updateHint() }
+    }
+
+    private func updateTabIdentifiers() {
+        for (i, tab) in tabs.enumerated() {
+            tab.setAccessibilityIdentifier("mako.tab.\(i + 1)")
+        }
+    }
+
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        menu.removeAllItems()
+        for (i, tab) in tabs.enumerated() {
+            let item = NSMenuItem(title: tabLabel(tab), action: #selector(selectTab(_:)),
+                                  keyEquivalent: i < 9 ? "\(i + 1)" : "")
+            item.keyEquivalentModifierMask = .command
+            item.target = self
+            item.tag = i
+            item.state = i == active ? .on : .off
+            menu.addItem(item)
+        }
     }
 
     /// Opens an external link: new tab if under the cap, otherwise ask before replacing.
@@ -181,6 +251,7 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
             return showOmnibox(text: "")
         }
         active = min(active, tabs.count - 1)
+        updateTabIdentifiers()
         select(active)
     }
 

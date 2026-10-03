@@ -7,8 +7,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_: Notification) {
         Core.ensureConfig()
-        NSApp.mainMenu = makeMenu()
         browser = Browser()
+        NSApp.mainMenu = makeMenu()
         CommandLine.arguments.dropFirst().compactMap(URL.init(string:)).filter { $0.scheme != nil }.forEach(browser.open)
         pending.forEach(browser.open)
         NSApp.activate()
@@ -36,6 +36,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return i
         }
         let main = NSMenu()
+        let tabs = menu("Tabs", [])
+        tabs.submenu?.delegate = browser
         [
             menu("Mako", [
                 item("Settings…", #selector(Browser.openConfig), ","),
@@ -68,7 +70,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 item("Back", #selector(Browser.back), "["),
                 item("Forward", #selector(Browser.forward), "]"),
             ]),
-            menu("Tabs", (1...9).map { item("Tab \($0)", #selector(Browser.selectTab), "\($0)", tag: $0 - 1) }),
+            tabs,
         ].forEach(main.addItem)
         return main
     }
