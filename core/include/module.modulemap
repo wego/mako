@@ -1,0 +1,5 @@
+module MakoCore {
+    header "mako.h"
+    link "mako_core"
+    export *
+}
