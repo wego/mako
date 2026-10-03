@@ -296,7 +296,7 @@ final class Browser: NSObject, NSWindowDelegate, NSMenuDelegate, WKNavigationDel
     static func page(_ title: String, _ body: String) -> String {
         let esc = { (s: String) in s.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;") }
         return """
-            <meta name="color-scheme" content="light dark">
+            <title>\(esc(title))</title><meta name="color-scheme" content="light dark">
             <body style="font:16px -apple-system;display:grid;place-items:center;height:90vh;margin:0">
             <div style="text-align:center"><h1 style="font-weight:600;margin:0 0 8px">\(esc(title))</h1>
             <p style="opacity:.6">\(esc(body))</p></div>

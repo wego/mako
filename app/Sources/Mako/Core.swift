@@ -3,8 +3,9 @@ import MakoCore
 
 /// Swift face of the Rust core. Reads the config file on each call so edits apply live.
 enum Core {
-    static let configURL = FileManager.default.homeDirectoryForCurrentUser
-        .appending(path: ".config/mako/config")
+    /// MAKO_CONFIG lets verification runs use a disposable config.
+    static let configURL = ProcessInfo.processInfo.environment["MAKO_CONFIG"].map { URL(fileURLWithPath: $0) }
+        ?? FileManager.default.homeDirectoryForCurrentUser.appending(path: ".config/mako/config")
 
     static let template = """
         # Mako config – edits apply on the next navigation.
