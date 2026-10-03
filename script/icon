@@ -1,0 +1,41 @@
+#!/bin/sh
+# Turns a 1024px generated icon into app/Resources/AppIcon.icns.
+# Usage: script/icon [design/icon-variants/<variant>.png]
+set -eu
+cd "$(dirname "$0")/.."
+src=${1:-design/icon-variants/4-liquid-glass-fin.png}
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+# Generated tiles sit on a white canvas; flood the outside white to transparent.
+uv run -q --with pillow python - "$src" "$work/icon.png" <<'PY'
+import sys
+from PIL import Image, ImageDraw
+im = Image.open(sys.argv[1]).convert("RGBA")
+mask = Image.new("L", im.size, 255)
+rgb = im.convert("RGB")
+w, h = im.size
+for seed in [(0, 0), (w - 1, 0), (0, h - 1), (w - 1, h - 1)]:
+    ImageDraw.floodfill(rgb, seed, (255, 0, 255), thresh=40)
+px = rgb.load()
+mp = mask.load()
+for y in range(h):
+    for x in range(w):
+        if px[x, y] == (255, 0, 255):
+            mp[x, y] = 0
+im.putalpha(mask)
+im = im.crop(im.getbbox())
+# Apple's macOS icon grid: an 824px tile centered on a 1024px canvas.
+im = im.resize((824, 824), Image.LANCZOS)
+canvas = Image.new("RGBA", (1024, 1024))
+canvas.paste(im, (100, 100))
+canvas.save(sys.argv[2])
+PY
+set=$work/AppIcon.iconset
+mkdir "$set"
+for s in 16 32 128 256 512; do
+  sips -z $s $s "$work/icon.png" --out "$set/icon_${s}x${s}.png" >/dev/null
+  sips -z $((s * 2)) $((s * 2)) "$work/icon.png" --out "$set/icon_${s}x${s}@2x.png" >/dev/null
+done
+mkdir -p app/Resources
+iconutil -c icns "$set" -o app/Resources/AppIcon.icns
+echo "app/Resources/AppIcon.icns from $src"

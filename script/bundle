@@ -7,8 +7,9 @@ cargo build --release --manifest-path core/Cargo.toml
 swift build -c release
 app=build/Mako.app/Contents
 rm -rf build/Mako.app
-mkdir -p "$app/MacOS"
+mkdir -p "$app/MacOS" "$app/Resources"
 cp .build/release/Mako "$app/MacOS/Mako"
+cp app/Resources/AppIcon.icns "$app/Resources/"
 cat > "$app/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -16,6 +17,7 @@ cat > "$app/Info.plist" <<PLIST
   <key>CFBundleName</key><string>Mako</string>
   <key>CFBundleIdentifier</key><string>com.chuyeow.mako</string>
   <key>CFBundleExecutable</key><string>Mako</string>
+  <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>0.1.0</string>
   <key>CFBundleVersion</key><string>1</string>
