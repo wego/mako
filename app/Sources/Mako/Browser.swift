@@ -4,6 +4,14 @@ import os
 
 let log = Logger(subsystem: "com.chuyeow.mako", category: "browser")
 
+/// Offers ⌘-shortcuts to the main menu before the focused web view, which otherwise
+/// eats them while its web process is busy or starting, and lets pages hijack ⌘W/⌘L.
+final class MenuFirstWindow: NSWindow {
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        NSApp.mainMenu?.performKeyEquivalent(with: event) == true || super.performKeyEquivalent(with: event)
+    }
+}
+
 /// One window, a few tabs, no tab bar. ⌘L summons the omnibox, which also lists tabs.
 @MainActor
 final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate, NSTextFieldDelegate {
@@ -18,7 +26,7 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
     private let hint = NSTextField(labelWithString: "")
 
     override init() {
-        window = NSWindow(
+        window = MenuFirstWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1200, height: 800),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered, defer: false)
@@ -34,6 +42,8 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
     }
 
     private var web: WKWebView { tabs[active] }
+    /// Current page, ignoring the blank/block/error pages Mako loads itself.
+    private var pageURL: URL? { web.url?.absoluteString == "about:blank" ? nil : web.url }
 
     // MARK: Omnibox
 
@@ -68,7 +78,7 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
     }
 
     func showOmnibox(text: String? = nil, message: String? = nil) {
-        field.stringValue = text ?? web.url?.absoluteString ?? ""
+        field.stringValue = text ?? pageURL?.absoluteString ?? ""
         let tabList = tabs.enumerated().map { i, t in
             "\(i == active ? "▸" : " ")⌘\(i + 1) \(t.title?.isEmpty == false ? t.title! : t.url?.host() ?? "new tab")"
         }
@@ -137,8 +147,9 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
 
     /// Opens an external link: new tab if under the cap, otherwise ask before replacing.
     func open(_ url: URL) {
-        if tabs.count == 1 && web.url == nil {
+        if tabs.count == 1 && pageURL == nil {
             web.load(URLRequest(url: url))
+            hideOmnibox()
         } else if tabs.count < Core.maxTabs {
             newTab()
             web.load(URLRequest(url: url))
@@ -162,12 +173,13 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
     @objc func openConfig(_: Any?) { NSWorkspace.shared.open(Core.configURL) }
 
     @objc func closeTab(_: Any?) {
-        guard tabs.count > 1 else {
-            web.load(URLRequest(url: URL(string: "about:blank")!))
-            return showOmnibox(text: "")
-        }
         let closing = tabs.remove(at: active)
         closing.removeFromSuperview()
+        guard !tabs.isEmpty else {
+            active = 0
+            newTab()
+            return showOmnibox(text: "")
+        }
         active = min(active, tabs.count - 1)
         select(active)
     }
