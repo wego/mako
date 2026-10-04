@@ -19,10 +19,10 @@ E=${MAKO_RUN:-verify-runs/latest}/evidence
 N=${PERF_N:-8}
 fails=0
 
-APP_INTERACTIVE_MS=330 # in-app: process start to main thread idle after launch
-APP_LAUNCH_MS=450     # in-app: process start to first page loaded (includes WebKit start-up)
-APP_NEW_TAB_MS=35     # in-app: cmd+T event until main thread idle
-APP_SWITCH_MS=15      # in-app: cmd+1 event until main thread idle
+APP_INTERACTIVE_MS=420 # in-app: process start to main thread idle after launch (median ~285)
+APP_LAUNCH_MS=520     # in-app: process start to first page loaded, incl. WebKit start-up (median ~350)
+APP_NEW_TAB_MS=55     # in-app: cmd+T event until main thread idle (median ~37)
+APP_SWITCH_MS=22      # in-app: cmd+1 event until main thread idle (median ~14)
 E2E_LAUNCH_MS=900     # backstop: launch command to title visible via AX
 E2E_NEW_TAB_MS=200    # backstop: cmd+T to new title visible via AX
 E2E_SWITCH_MS=150     # backstop: cmd+1 to title visible via AX
