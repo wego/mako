@@ -1,7 +1,7 @@
 #!/bin/sh
 # Builds the Rust core + Swift shell (release) and assembles build/Mako.app.
 # MAKO_VERSION / MAKO_BUILD set the app version (CI release uses 0.1.<run> and <run>).
-# Install: SIGN_IDENTITY="Apple Development: ..." script/bundle && ditto build/Mako.app /Applications/Mako.app
+# Install: script/bundle && ditto build/Mako.app /Applications/Mako.app
 set -eu
 cd "$(dirname "$0")/.."
 cargo build --release --manifest-path core/Cargo.toml
