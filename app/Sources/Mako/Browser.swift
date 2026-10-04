@@ -303,12 +303,14 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
     // MARK: Focus policy
 
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction) async -> WKNavigationActionPolicy {
-        guard action.targetFrame?.isMainFrame ?? true,
-              let host = action.request.url?.host(),
-              let reason = Core.blockReason(host: host)
-        else {
+        guard let host = action.request.url?.host(), let reason = Core.blockReason(host: host) else {
             log.info("allow \(action.request.url?.absoluteString ?? "", privacy: .public)")
             return .allow
+        }
+        guard action.targetFrame?.isMainFrame ?? true else {
+            // An embed (iframe) is just left empty; the page around it stays.
+            log.info("block \(host, privacy: .public) (frame): \(reason, privacy: .public)")
+            return .cancel
         }
         log.info("block \(host, privacy: .public): \(reason, privacy: .public)")
         webView.loadHTMLString(Self.blockPage(reason), baseURL: nil)

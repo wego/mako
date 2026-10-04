@@ -108,6 +108,12 @@ go mobile.x.com
 check block-subdomain sh -c "sleep 2; $M $P tree 8 | grep -q 'x.com is blocked'"
 go example.com
 check block-allowed $M "$P" wait-title "Example Domain" 8
+embed="data:text/html,<title>embed</title><p>host page</p><iframe src='https://x.com/'></iframe><iframe src='https://www.iana.org/'></iframe>"
+go "$embed"
+check block-iframe sh -c "sleep 3; grep -q 'block x.com (frame)' $E/block-log.txt"
+check block-iframe-host-loads $M "$P" wait-title "embed" 2
+check block-iframe-allowed-frame sh -c "grep -q 'allow https://www.iana.org/' $E/block-log.txt"
+go example.com; $M "$P" wait-title "Example Domain" 8 >/dev/null
 echo 'block example.com' >>"$run/state/config"
 $M "$P" key cmd+r
 check block-live-edit sh -c "sleep 2; $M $P tree 8 | grep -q 'example.com is blocked'"

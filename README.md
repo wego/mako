@@ -38,5 +38,5 @@ The `verify-mako` skill (`.claude/skills/verify-mako/`) launches an isolated ins
     max_tabs = 3
     restore_session = true                 # reopen last session's tabs at launch (default)
     search = https://duckduckgo.com/?q=%s
-    block x.com                            # always, includes subdomains
+    block x.com                            # always, includes subdomains and embeds (iframes)
     block youtube.com 09:00-18:00 weekdays # days: mon-fri, sat,sun, weekends, daily
