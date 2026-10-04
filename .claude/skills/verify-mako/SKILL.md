@@ -23,7 +23,7 @@ $C launch path/to/config https://example.com   # custom config and start URLs
 P=$($C pid); M=verify-runs/.bin/makoctl
 ```
 
-Ready when `launch` prints `pid <n> ready`. Launch goes through LaunchServices (`open -n --env`); a bare exec of the binary receives no key events. The instance uses `MAKO_CONFIG=verify-runs/latest/state/config`, so the user's `~/.config/mako/config` is never read or written. Set `MAKO_RUN=verify-runs/<name>` to keep evidence from separate runs apart. Only one instance per `MAKO_RUN`; `launch` refuses a second.
+Ready when `launch` prints `pid <n> ready`. Launch goes through LaunchServices (`open -n --env`); a bare exec of the binary receives no key events. Each run drives its own app copy with bundle ID `com.chuyeow.mako.verify.<run>`, so it shares no cookies, logins, caches or preferences with the user's Mako or other runs (see `docs/control.md`, Isolation). The instance uses `MAKO_CONFIG=verify-runs/latest/state/config`, so the user's `~/.config/mako/config` is never read or written. Set `MAKO_RUN=verify-runs/<name>` to keep evidence from separate runs apart. Only one instance per `MAKO_RUN`; `launch` refuses a second.
 
 `launch` always starts from fresh state: default config, no `session.json`, so nothing is restored. `$C quit` (graceful ⌘Q, keeps state) and `$C relaunch [url...]` (start again on the same state) exercise session restore.
 
@@ -72,7 +72,7 @@ Write artifacts to `$MAKO_RUN/evidence/` (default `verify-runs/latest/evidence/`
 $C stop
 ```
 
-Kills only the PID this run launched and removes `$MAKO_RUN/state`. Evidence in `$MAKO_RUN/evidence/` survives. Run `stop` after every failed attempt too.
+Kills only the PID this run launched and removes `$MAKO_RUN/state` and the run's website data. Evidence in `$MAKO_RUN/evidence/` survives. Run `stop` after every failed attempt too.
 
 ## Full pass
 

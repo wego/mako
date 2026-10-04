@@ -30,11 +30,13 @@ $C stop
 
 `control-mako` never touches the Mako you use day to day.
 
-- It runs `build/Mako.app`, not `/Applications/Mako.app`, as a separate instance (`open -n`).
-- It sets `MAKO_CONFIG` to `verify-runs/<run>/state/config`, so your `~/.config/mako/config` and `session.json` are never read or written.
+- Each run drives its own copy of the build, `verify-runs/<run>/app/Mako.app`, with its own bundle ID, `com.chuyeow.mako.verify.<run>`. macOS and WebKit store cookies, logins, caches, local storage, preferences and window positions by bundle ID, so a run shares none of them with your daily Mako or with other runs. A run is never signed in to anything you are.
+- The copy has no `http`/`https` URL handlers, so macOS never offers it for links you open.
+- `launch` starts the run with no website data; `stop` deletes that data (`~/Library/{WebKit,Caches,HTTPStorages,Preferences}/com.chuyeow.mako.verify.<run>*`). Data persists across `quit` and `relaunch` within a run.
+- `MAKO_CONFIG` points at `verify-runs/<run>/state/config`, so your `~/.config/mako/config` and `session.json` are never read or written.
 - `makoctl` targets a process ID, never an app name, so it cannot reach another Mako by accident.
 
-Not isolated: website cookies and logins (WebKit's default data store), and the saved window position. A test run can see sites you are logged in to.
+`smoke` proves this on every run: a cookie set in one run is invisible to a second run, and your daily Mako's data files are unchanged afterwards.
 
 `MAKO_RUN=verify-runs/<name>` keeps separate runs apart (default `verify-runs/latest`). Each run has `state/` (config, `session.json`, pid; deleted by `stop`) and `evidence/` (screenshots and logs; never deleted by the tools).
 
@@ -43,12 +45,12 @@ Not isolated: website cookies and logins (WebKit's default data store), and the 
 | Command | What it does |
 | --- | --- |
 | `control-mako build` | Runs `script/bundle` (Rust core + Swift app) and compiles `makoctl` into `verify-runs/.bin/`. |
-| `control-mako launch [config-file\|""] [url...]` | Fresh state, then start. `""` uses the default test config (`max_tabs = 3`, `block x.com`); a file path copies that config. URLs open at launch. Refuses if this run already has a live instance. Prints `pid <n> ready`. |
+| `control-mako launch [config-file\|""] [url...]` | Fresh state (config, session, and website data), then start the run's own app copy. `""` uses the default test config (`max_tabs = 3`, `block x.com`); a file path copies that config. URLs open at launch. Refuses if this run already has a live instance. Prints `pid <n> ready`. |
 | `control-mako pid` | Prints the running instance's pid. |
 | `control-mako doctor` | Read-only health check: process alive, it is this checkout's build, AX answers, screenshots work. Prints `OK …` or `FAIL <reason>`. Run it first and after anything surprising. |
 | `control-mako quit` | Graceful ⌘Q through the menu, so Mako saves its session. Waits for exit. Keeps `state/`. |
 | `control-mako relaunch [url...]` | Starts again on the existing `state/` (config and `session.json`), as a user reopening Mako would. |
-| `control-mako stop` | Kills the instance this run started and deletes `state/`. Evidence stays. |
+| `control-mako stop` | Kills the instance this run started, deletes `state/` and the run's website data. Evidence stays. |
 
 Exit status is 0 on success, 1 on failure, 64 on bad usage.
 

@@ -1,0 +1,14 @@
+<!doctype html><title>storage</title>
+<button onclick="setAll()">Set storage</button>
+<script>
+function show() {
+  document.title = 'cookie=' + (document.cookie.includes('mako_probe=1') ? 'yes' : 'no') +
+    ' local=' + (localStorage.getItem('mako_probe') || 'no')
+}
+function setAll() {
+  document.cookie = 'mako_probe=1; max-age=86400; path=/'
+  localStorage.setItem('mako_probe', 'yes')
+  show()
+}
+show()
+</script>

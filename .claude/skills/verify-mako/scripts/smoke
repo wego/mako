@@ -24,6 +24,8 @@ launch() {
 go() { $M "$P" key cmd+l; s 0.3; $M "$P" type "$1"; $M "$P" key return; }
 has_tree() { $M "$P" tree "${2:-8}" | grep -q "$1"; }
 trap '$C stop >/dev/null 2>&1' EXIT
+daily_stamp() { stat -f "%m %z" "$HOME/Library/HTTPStorages/com.chuyeow.mako.binarycookies" "$HOME/Library/WebKit/com.chuyeow.mako" 2>/dev/null | tr '\n' ' '; }
+daily_before=$(daily_stamp)
 
 .claude/skills/verify-mako/scripts/doc-check || fails=$((fails + $?))
 $C build >/dev/null || { echo "FAIL build"; exit 99; }
@@ -133,6 +135,18 @@ check popup-closes sh -c "sleep 1; ! $M $P windows | grep -q mako.popup"
 check popup-not-a-tab $M "$P" wait-title "signed in – 1/1" 1
 $M "$P" press "plain target=_blank link"
 check blank-link-same-tab $M "$P" wait-title "provider – 1/1" 6
+
+echo "== isolation"
+go "http://127.0.0.1:$port/storage.html"
+check iso-run-starts-empty $M "$P" wait-title "cookie=no local=no" 8
+$M "$P" press "Set storage"
+check iso-set-in-run $M "$P" wait-title "cookie=yes local=yes" 3
+other="$run-other"
+if MAKO_RUN="$other" $C launch "" "http://127.0.0.1:$port/storage.html" >/dev/null; then
+  check iso-other-run-cannot-see $M "$(MAKO_RUN="$other" $C pid)" wait-title "cookie=no local=no" 8
+else fail "iso-other-run-launch"; fi
+MAKO_RUN="$other" $C stop >/dev/null; rm -rf "$other"
+check iso-daily-untouched test "$daily_before" = "$(daily_stamp)"
 kill "$srv" 2>/dev/null; wait "$srv" 2>/dev/null
 
 echo "== page shortcuts"

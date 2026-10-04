@@ -1,0 +1,10 @@
+<!doctype html><title>passkey probe</title>
+<button onclick="probe()">Sign in with passkey</button>
+<script>
+function probe() {
+  document.title = 'waiting'
+  navigator.credentials.get({ publicKey: { challenge: new Uint8Array(32), timeout: 8000, userVerification: 'preferred' } })
+    .then(() => document.title = 'passkey: credential returned',
+          e => document.title = 'passkey: ' + e.name + ': ' + e.message)
+}
+</script>

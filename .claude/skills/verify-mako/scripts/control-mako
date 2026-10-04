@@ -1,12 +1,37 @@
 #!/bin/sh
 # Launches and tears down an isolated Mako for verification. State per run lives
 # in $MAKO_RUN (default: ./verify-runs/latest); evidence goes to $MAKO_RUN/evidence.
+# Each run drives its own copy of the app with its own bundle ID, so cookies,
+# logins, caches, web storage and preferences never mix with the daily Mako or
+# with other runs: macOS and WebKit key all of them by bundle ID.
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 repo=$(cd "$here/../../../.." && pwd)
 run=${MAKO_RUN:-$repo/verify-runs/latest}
+case "$run" in /*) ;; *) run="$PWD/$run" ;; esac
 bin="$repo/verify-runs/.bin/makoctl"
-exe="$repo/build/Mako.app/Contents/MacOS/Mako"
+app="$run/app/Mako.app"
+exe="$app/Contents/MacOS/Mako"
+id="com.chuyeow.mako.verify.$(basename "$run" | tr -c 'a-zA-Z0-9\n' '-')"
+
+# The run's copy of build/Mako.app, refreshed when the build is newer. It drops the
+# http/https URL handlers so macOS never offers the copy as a browser for real links.
+prepare_app() {
+  [ -x "$exe" ] && [ ! "$repo/build/Mako.app/Contents/MacOS/Mako" -nt "$exe" ] && return 0
+  rm -rf "$app"; mkdir -p "$run/app"
+  cp -R "$repo/build/Mako.app" "$app"
+  /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $id" -c "Delete :CFBundleURLTypes" "$app/Contents/Info.plist"
+  codesign --force --sign - "$app" 2>/dev/null
+}
+
+# Deletes everything macOS and WebKit stored for this run's bundle ID.
+wipe_data() {
+  case "$id" in com.chuyeow.mako.verify.?*) ;; *) echo "refusing to wipe data for $id"; exit 1 ;; esac
+  rm -rf "$HOME/Library/WebKit/$id" "$HOME/Library/Caches/$id" "$HOME/Library/HTTPStorages/$id" \
+    "$HOME/Library/HTTPStorages/$id.binarycookies" "$HOME/Library/Saved Application State/$id.savedState"
+  defaults delete "$id" >/dev/null 2>&1 || true
+  rm -f "$HOME/Library/Preferences/$id.plist"
+}
 
 makoctl_build() {
   mkdir -p "$(dirname "$bin")"
@@ -20,13 +45,12 @@ refuse_if_running() {
   return 0
 }
 
-# start [url...]: opens build/Mako.app on the existing $run/state (config, session.json).
+# start [url...]: opens the run's app copy on the existing $run/state (config, session.json).
 start() {
-  before=$(pgrep -f "$exe" || true)
   # LaunchServices launch (-n: separate instance); a bare exec gets no key events.
-  open -n -a "$repo/build/Mako.app" --env MAKO_CONFIG="$run/state/config" --args "$@"
+  open -n -a "$app" --env MAKO_CONFIG="$run/state/config" --args "$@"
   i=0
-  until pid=$(pgrep -f "$exe" | grep -vxF "$before" | head -1) && [ -n "$pid" ]; do
+  until pid=$(pgrep -f "$exe" | head -1) && [ -n "$pid" ]; do
     i=$((i + 1)); [ $i -gt 50 ] && { echo "process never started"; exit 1; }
     sleep 0.2
   done
@@ -36,7 +60,7 @@ start() {
     i=$((i + 1)); [ $i -gt 50 ] && { echo "window never appeared: $("$bin" "$pid" title 2>&1)"; exit 1; }
     sleep 0.2
   done
-  echo "pid $pid ready; config $run/state/config; evidence $run/evidence"
+  echo "pid $pid ready; bundle id $id; config $run/state/config; evidence $run/evidence"
 }
 
 case "${1:-}" in
@@ -46,9 +70,12 @@ build)
   echo "built $repo/build/Mako.app and $bin"
   ;;
 launch)
-  # launch [config-file|""] [url...]: fresh state (default config, no session), then start.
+  # launch [config-file|""] [url...]: fresh state (default config, no session, no website data), then start.
   shift
   refuse_if_running
+  [ -x "$repo/build/Mako.app/Contents/MacOS/Mako" ] || { echo "no build; run: control-mako build"; exit 1; }
+  wipe_data
+  prepare_app
   rm -rf "$run/state"; mkdir -p "$run/state" "$run/evidence"
   printf 'max_tabs = 3\nblock x.com\n' > "$run/state/config"
   if [ $# -gt 0 ]; then
@@ -85,18 +112,22 @@ doctor)
   pid=$(cat "$run/pid")
   kill -0 "$pid" 2>/dev/null || { echo "FAIL pid $pid not running"; exit 1; }
   comm=$(ps -o comm= -p "$pid")
-  [ "$comm" = "$exe" ] || { echo "FAIL pid $pid is $comm, not this checkout's build"; exit 1; }
+  [ "$comm" = "$exe" ] || { echo "FAIL pid $pid is $comm, not this run's app copy"; exit 1; }
+  [ ! "$repo/build/Mako.app/Contents/MacOS/Mako" -nt "$exe" ] || { echo "FAIL running copy is older than build/Mako.app; stop and launch again"; exit 1; }
   ax=$("$bin" "$pid" title 2>&1) || { echo "FAIL accessibility: $ax"; exit 1; }
   "$bin" "$pid" shot "$run/state/doctor.png" >/dev/null || { echo "FAIL screen recording unavailable"; exit 1; }
-  echo "OK pid $pid build $(stat -f %Sm "$exe") title \"$("$bin" "$pid" title)\""
+  echo "OK pid $pid id $id build $(stat -f %Sm "$exe") title \"$("$bin" "$pid" title)\""
   ;;
 stop)
   if [ -f "$run/pid" ]; then
     pid=$(cat "$run/pid")
     kill "$pid" 2>/dev/null || true
+    i=0
+    while kill -0 "$pid" 2>/dev/null && [ $i -lt 50 ]; do i=$((i + 1)); sleep 0.1; done
     rm -f "$run/pid"
     echo "stopped pid $pid"
   fi
+  wipe_data
   rm -rf "$run/state"
   ;;
 *)
