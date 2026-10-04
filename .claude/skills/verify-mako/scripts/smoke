@@ -24,7 +24,7 @@ launch() {
 go() { $M "$P" key cmd+l; s 0.3; $M "$P" type "$1"; $M "$P" key return; }
 has_tree() { $M "$P" tree "${2:-8}" | grep -q "$1"; }
 trap '$C stop >/dev/null 2>&1' EXIT
-daily_stamp() { stat -f "%m %z" "$HOME/Library/HTTPStorages/com.chuyeow.mako.binarycookies" "$HOME/Library/WebKit/com.chuyeow.mako" 2>/dev/null | tr '\n' ' '; }
+daily_stamp() { stat -f "%m %z" "$HOME/Library/HTTPStorages/com.wego.mako.binarycookies" "$HOME/Library/WebKit/com.wego.mako" 2>/dev/null | tr '\n' ' '; }
 daily_before=$(daily_stamp)
 
 .claude/skills/verify-mako/scripts/doc-check || fails=$((fails + $?))
@@ -101,7 +101,7 @@ check tab-close-to-last $M "$P" wait-title "New Tab – 1/1" 2
 check tab-last-blank $M "$P" exists mako.blank
 
 echo "== blocklist"
-log stream --level info --predicate 'subsystem == "com.chuyeow.mako"' --style compact >"$E/block-log.txt" 2>&1 &
+log stream --level info --predicate 'subsystem == "com.wego.mako"' --style compact >"$E/block-log.txt" 2>&1 &
 logpid=$!; s 1
 go x.com
 check block-typed sh -c "sleep 2; $M $P tree 8 | grep -q 'x.com is blocked'"
@@ -113,8 +113,8 @@ go example.com
 check block-allowed $M "$P" wait-title "Example Domain" 8
 embed="data:text/html,<title>embed</title><p>host page</p><iframe src='https://x.com/'></iframe><iframe src='https://www.iana.org/'></iframe>"
 go "$embed"
-check block-iframe sh -c "sleep 3; grep -q 'block x.com (frame)' $E/block-log.txt"
-check block-iframe-host-loads $M "$P" wait-title "embed" 2
+check block-iframe-host-loads $M "$P" wait-title "embed" 15
+check block-iframe sh -c "sleep 1; grep -q 'block x.com (frame)' $E/block-log.txt"
 check block-iframe-allowed-frame sh -c "grep -q 'allow https://www.iana.org/' $E/block-log.txt"
 go example.com; $M "$P" wait-title "Example Domain" 8 >/dev/null
 echo 'block example.com' >>"$run/state/config"

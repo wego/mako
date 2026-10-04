@@ -23,7 +23,7 @@ $C launch path/to/config https://example.com   # custom config and start URLs
 P=$($C pid); M=verify-runs/.bin/makoctl
 ```
 
-Ready when `launch` prints `pid <n> ready`. Launch goes through LaunchServices (`open -n --env`); a bare exec of the binary receives no key events. Each run drives its own app copy with bundle ID `com.chuyeow.mako.verify.<run>`, so it shares no cookies, logins, caches or preferences with the user's Mako or other runs (see `docs/control.md`, Isolation). The instance uses `MAKO_CONFIG=verify-runs/latest/state/config`, so the user's `~/.config/mako/config` is never read or written. Set `MAKO_RUN=verify-runs/<name>` to keep evidence from separate runs apart. Only one instance per `MAKO_RUN`; `launch` refuses a second.
+Ready when `launch` prints `pid <n> ready`. Launch goes through LaunchServices (`open -n --env`); a bare exec of the binary receives no key events. Each run drives its own app copy with bundle ID `com.wego.mako.verify.<run>`, so it shares no cookies, logins, caches or preferences with the user's Mako or other runs (see `docs/control.md`, Isolation). The instance uses `MAKO_CONFIG=verify-runs/latest/state/config`, so the user's `~/.config/mako/config` is never read or written. Set `MAKO_RUN=verify-runs/<name>` to keep evidence from separate runs apart. Only one instance per `MAKO_RUN`; `launch` refuses a second.
 
 `launch` always starts from fresh state: default config, no `session.json`, so nothing is restored. `$C quit` (graceful ⌘Q, keeps state) and `$C relaunch [url...]` (start again on the same state) exercise session restore.
 
@@ -63,7 +63,7 @@ Write artifacts to `$MAKO_RUN/evidence/` (default `verify-runs/latest/evidence/`
 - Drive the real user path: menus, shortcuts, and typing. No internal setters.
 - Capture the action and the resulting state: a `tree` or `title` read after each step, plus a `shot` for anything visual.
 - For the blocklist, prove both sides: a blocked host shows the block page and an unblocked host loads.
-- `log stream --level info --predicate 'subsystem == "com.chuyeow.mako"'` shows `allow`/`block`/`loaded` decisions; capture it alongside UI evidence for navigation proofs.
+- `log stream --level info --predicate 'subsystem == "com.wego.mako"'` shows `allow`/`block`/`loaded` decisions; capture it alongside UI evidence for navigation proofs.
 - A pass needs every step's expected observation; "it didn't crash" is not a pass.
 
 ## Cleanup

@@ -18,7 +18,7 @@ Pages from hosts in the config's `block` lines (with optional time windows) do n
 
 ## Driving it with makoctl
 
-Preconditions: baseline (`block x.com`). Start `log stream --level info --predicate 'subsystem == "com.chuyeow.mako"' > $E/block-log.txt &` first.
+Preconditions: baseline (`block x.com`). Start `log stream --level info --predicate 'subsystem == "com.wego.mako"' > $E/block-log.txt &` first.
 
 - **Blocked.** `$M $P key cmd+l; $M $P type x.com; $M $P key return`. `$M $P tree 8 | grep "x.com is blocked"` matches; `shot $E/block-page.png`.
 - **Subdomain.** Same with `mobile.x.com`. Same text.

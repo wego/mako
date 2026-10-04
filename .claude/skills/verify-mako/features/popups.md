@@ -23,7 +23,7 @@ Preconditions: baseline launched with any page. Serve the fixtures: `python3 -m 
 - **Sign in.** `$M $P press "Continue with Provider"`. Within ~1 s `$M $P windows` lists a second window with `id="mako.popup"`, then it closes, and `wait-title "signed in – 1/1"` succeeds.
 - **Plain link.** `$M $P press "plain target=_blank link"`. `wait-title "provider – 1/1"`: same tab, no popup.
 - **User agent.** In the console (⌥⌘C) run `navigator.userAgent`; it ends with `Version/… Safari/605.1.15`.
-- **Proof.** `windows` output during and after the sign-in, plus the titles, into `$E/popups.txt`; the `popup` lines in the `com.chuyeow.mako` log.
+- **Proof.** `windows` output during and after the sign-in, plus the titles, into `$E/popups.txt`; the `popup` lines in the `com.wego.mako` log.
 
 ## Gotchas
 

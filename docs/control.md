@@ -30,9 +30,9 @@ $C stop
 
 `control-mako` never touches the Mako you use day to day.
 
-- Each run drives its own copy of the build, `verify-runs/<run>/app/Mako.app`, with its own bundle ID, `com.chuyeow.mako.verify.<run>`. macOS and WebKit store cookies, logins, caches, local storage, preferences and window positions by bundle ID, so a run shares none of them with your daily Mako or with other runs. A run is never signed in to anything you are.
+- Each run drives its own copy of the build, `verify-runs/<run>/app/Mako.app`, with its own bundle ID, `com.wego.mako.verify.<run>`. macOS and WebKit store cookies, logins, caches, local storage, preferences and window positions by bundle ID, so a run shares none of them with your daily Mako or with other runs. A run is never signed in to anything you are.
 - The copy has no `http`/`https` URL handlers, so macOS never offers it for links you open. It is re-signed ad hoc, so it never carries the passkey entitlement even when the daily build does.
-- `launch` starts the run with no website data; `stop` deletes that data (`~/Library/{WebKit,Caches,HTTPStorages,Preferences}/com.chuyeow.mako.verify.<run>*`). Data persists across `quit` and `relaunch` within a run.
+- `launch` starts the run with no website data; `stop` deletes that data (`~/Library/{WebKit,Caches,HTTPStorages,Preferences}/com.wego.mako.verify.<run>*`). Data persists across `quit` and `relaunch` within a run.
 - `MAKO_CONFIG` points at `verify-runs/<run>/state/config`, so your `~/.config/mako/config` and `session.json` are never read or written.
 - `makoctl` targets a process ID, never an app name, so it cannot reach another Mako by accident.
 
@@ -171,7 +171,7 @@ $C quit; cat verify-runs/latest/state/session.json; $C relaunch; P=$($C pid)
 Watch Mako's own decisions (navigation allowed or blocked, popups, page loads):
 
 ```sh
-log stream --level info --predicate 'subsystem == "com.chuyeow.mako"' --style compact
+log stream --level info --predicate 'subsystem == "com.wego.mako"' --style compact
 ```
 
 ## Verification and performance

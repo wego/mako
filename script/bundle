@@ -15,7 +15,7 @@ cat > "$app/Info.plist" <<PLIST
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
   <key>CFBundleName</key><string>Mako</string>
-  <key>CFBundleIdentifier</key><string>com.chuyeow.mako</string>
+  <key>CFBundleIdentifier</key><string>com.wego.mako</string>
   <key>CFBundleExecutable</key><string>Mako</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
@@ -31,7 +31,7 @@ cat > "$app/Info.plist" <<PLIST
 PLIST
 # SIGN_IDENTITY: a stable cert keeps macOS permissions across rebuilds; default ad-hoc.
 # PROVISIONING_PROFILE: a macOS profile granting Apple's browser passkey entitlement
-# (com.apple.developer.web-browser.public-key-credential) for com.chuyeow.mako.
+# (com.apple.developer.web-browser.public-key-credential) for com.wego.mako.
 # macOS kills a binary that claims the entitlement without such a profile, so it is
 # only added when the profile is checked here first.
 if [ -n "${PROVISIONING_PROFILE:-}" ]; then
@@ -40,8 +40,8 @@ if [ -n "${PROVISIONING_PROFILE:-}" ]; then
   get() { /usr/libexec/PlistBuddy -c "Print :$1" "$profile" 2>/dev/null; }
   team=$(get TeamIdentifier:0)
   [ "$(get Platform:0)" = OSX ] || { echo "$PROVISIONING_PROFILE is not a macOS profile ($(get Platform:0))"; exit 1; }
-  [ "$(get Entitlements:com.apple.application-identifier)" = "$team.com.chuyeow.mako" ] ||
-    { echo "$PROVISIONING_PROFILE is for $(get Entitlements:com.apple.application-identifier), not $team.com.chuyeow.mako"; exit 1; }
+  [ "$(get Entitlements:com.apple.application-identifier)" = "$team.com.wego.mako" ] ||
+    { echo "$PROVISIONING_PROFILE is for $(get Entitlements:com.apple.application-identifier), not $team.com.wego.mako"; exit 1; }
   [ "$(get Entitlements:com.apple.developer.web-browser.public-key-credential)" = true ] ||
     { echo "$PROVISIONING_PROFILE does not grant com.apple.developer.web-browser.public-key-credential"; exit 1; }
   cp "$PROVISIONING_PROFILE" "$app/embedded.provisionprofile"
@@ -50,7 +50,7 @@ if [ -n "${PROVISIONING_PROFILE:-}" ]; then
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-  <key>com.apple.application-identifier</key><string>$team.com.chuyeow.mako</string>
+  <key>com.apple.application-identifier</key><string>$team.com.wego.mako</string>
   <key>com.apple.developer.team-identifier</key><string>$team</string>
   <key>com.apple.developer.web-browser.public-key-credential</key><true/>
 </dict></plist>

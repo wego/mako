@@ -12,7 +12,7 @@ case "$run" in /*) ;; *) run="$PWD/$run" ;; esac
 bin="$repo/verify-runs/.bin/makoctl"
 app="$run/app/Mako.app"
 exe="$app/Contents/MacOS/Mako"
-id="com.chuyeow.mako.verify.$(basename "$run" | tr -c 'a-zA-Z0-9\n' '-')"
+id="com.wego.mako.verify.$(basename "$run" | tr -c 'a-zA-Z0-9\n' '-')"
 
 # The run's copy of build/Mako.app, refreshed when the build is newer. It drops the
 # http/https URL handlers so macOS never offers the copy as a browser for real links.
@@ -26,7 +26,7 @@ prepare_app() {
 
 # Deletes everything macOS and WebKit stored for this run's bundle ID.
 wipe_data() {
-  case "$id" in com.chuyeow.mako.verify.?*) ;; *) echo "refusing to wipe data for $id"; exit 1 ;; esac
+  case "$id" in com.wego.mako.verify.?*) ;; *) echo "refusing to wipe data for $id"; exit 1 ;; esac
   rm -rf "$HOME/Library/WebKit/$id" "$HOME/Library/Caches/$id" "$HOME/Library/HTTPStorages/$id" \
     "$HOME/Library/HTTPStorages/$id.binarycookies" "$HOME/Library/Saved Application State/$id.savedState"
   defaults delete "$id" >/dev/null 2>&1 || true

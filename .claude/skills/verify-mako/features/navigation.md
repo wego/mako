@@ -20,7 +20,7 @@ Preconditions: baseline launched with `https://example.com`.
 
 - **History.** `$M $P key cmd+l; $M $P type iana.org; $M $P key return; $M $P wait-title "Internet Assigned" 8`. `$M $P key cmd+[` then `wait-title "Example Domain"`. `$M $P key cmd+]` then `wait-title "Internet Assigned"`.
 - **Menus.** `$M $P menu History Back` then `wait-title "Example Domain"`; `$M $P menu History Forward` returns.
-- **Reload.** Run `log stream` filtered to `com.chuyeow.mako`, then `$M $P key cmd+r`. A new `loaded tab 0/1` line appears.
+- **Reload.** Run `log stream` filtered to `com.wego.mako`, then `$M $P key cmd+r`. A new `loaded tab 0/1` line appears.
 - **Zoom.** `$M $P shot $E/zoom-1.png; $M $P key cmd+=; $M $P key cmd+=; $M $P shot $E/zoom-2.png; $M $P key cmd+0`. Text in `zoom-2.png` is visibly larger than in `zoom-1.png`.
 
 ## Gotchas

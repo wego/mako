@@ -2,7 +2,7 @@ import AppKit
 import WebKit
 import os
 
-let log = Logger(subsystem: "com.chuyeow.mako", category: "browser")
+let log = Logger(subsystem: "com.wego.mako", category: "browser")
 
 /// Offers only Mako-owned ⌘-shortcuts to the main menu first so pages cannot hijack
 /// tab and omnibox controls. Editing and navigation shortcuts keep AppKit's order.

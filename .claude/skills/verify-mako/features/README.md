@@ -19,7 +19,7 @@ One recipe per user-facing feature. Read this index, then drive the matching fil
 ## Proof and skip reporting
 
 - UI proof is an AX `tree` capture plus a `shot`, both under `verify-runs/<run>/evidence/`.
-- Navigation proof adds the `com.chuyeow.mako` log lines for the same run.
+- Navigation proof adds the `com.wego.mako` log lines for the same run.
 - Report an unreachable step with the command run and the unmet precondition. Never report a skipped entry point as verified through another one.
 
 ## Feature entry contract
