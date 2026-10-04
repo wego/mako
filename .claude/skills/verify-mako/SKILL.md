@@ -43,7 +43,7 @@ Prints `OK pid … build <mtime> title "…"` only when the PID is alive, is thi
 | `title` / `wait-title <substr> [s]` | window title (page title + ` – i/n` tab position) |
 | `value <id>` / `exists <id>` | read an element by AX identifier |
 | `menu <Menu> <Item>` / `menu-items <Menu>` | press or list menu items via AX |
-| `key <combo>` | `return`, `escape`, `cmd+t`, `cmd+w`, `cmd+l`, `cmd+1`…`cmd+9`, `cmd+z`, `cmd+[`, `cmd+]`, `cmd+r` |
+| `key <combo>` | `return`, `escape`, `cmd+opt+c`, `cmd+t`, `cmd+w`, `cmd+l`, `cmd+1`…`cmd+9`, `cmd+z`, `cmd+[`, `cmd+]`, `cmd+r` |
 | `type <text>` | types into the focused element |
 | `shot <path>` | window screenshot (works even when another app is in front) |
 

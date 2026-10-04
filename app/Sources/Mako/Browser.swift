@@ -8,9 +8,10 @@ let log = Logger(subsystem: "com.chuyeow.mako", category: "browser")
 /// tab and omnibox controls. Editing and navigation shortcuts keep AppKit's order.
 final class MenuFirstWindow: NSWindow {
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        if event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
-           let key = event.charactersIgnoringModifiers,
-           ["t", "w", "l", ",", "1", "2", "3", "4", "5", "6", "7", "8", "9"].contains(key),
+        let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if let key = event.charactersIgnoringModifiers,
+           (mods == .command && ["t", "w", "l", ",", "1", "2", "3", "4", "5", "6", "7", "8", "9"].contains(key))
+               || (mods == [.command, .option] && key == "c"),
            NSApp.mainMenu?.performKeyEquivalent(with: event) == true {
             return true
         }
@@ -62,6 +63,7 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
             blank.heightAnchor.constraint(equalToConstant: 128),
         ])
         webConfig.preferences.isElementFullscreenEnabled = true
+        webConfig.preferences.setValue(true, forKey: "developerExtrasEnabled")
         buildOmnibox()
         newTab()
         window.makeKeyAndOrderFront(nil)
@@ -170,6 +172,7 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         w.uiDelegate = self
         w.allowsBackForwardNavigationGestures = true
         w.allowsMagnification = true
+        w.isInspectable = true
         observations += [
             w.observe(\.title) { [weak self] _, _ in MainActor.assumeIsolated { self?.updateTabPresentation() } },
             w.observe(\.url) { [weak self] _, _ in MainActor.assumeIsolated { self?.updateTabPresentation() } },
@@ -248,6 +251,17 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
     @objc func zoomReset(_: Any?) { web.pageZoom = 1 }
     @objc func selectTab(_ sender: NSMenuItem) { select(sender.tag) }
     @objc func openConfig(_: Any?) { NSWorkspace.shared.open(Core.configURL) }
+
+    /// WebKit has no public API to open the Web Inspector; this is the private
+    /// _WKInspector that Safari's ⌥⌘C uses. Fine outside the App Store.
+    @objc func toggleConsole(_: Any?) {
+        guard let inspector = web.value(forKey: "_inspector") as? NSObject else { return NSSound.beep() }
+        if inspector.value(forKey: "isVisible") as? Bool == true {
+            inspector.perform(NSSelectorFromString("close"))
+        } else {
+            inspector.perform(NSSelectorFromString("showConsole"))
+        }
+    }
 
     @objc func closeTab(_: Any?) {
         let closing = tabs.remove(at: active)

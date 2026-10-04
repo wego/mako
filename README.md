@@ -18,9 +18,10 @@ Swift/AppKit shell over WKWebView; policy and omnibox logic in a small Rust core
 | ⌘1–9 / Tabs menu | Switch tab (the menu lists open tabs by name) |
 | ⌘[ / ⌘] | Back / forward |
 | ⌘R, ⌘= ⌘- ⌘0 | Reload, zoom |
+| ⌥⌘C | Developer console (Web Inspector) |
 | ⌘, | Edit config |
 
-Links that try to open a new window load in the current tab. Mako's own shortcuts (⌘T ⌘W ⌘L ⌘, ⌘1–9) win over pages; every other shortcut goes to the page first, so web editors keep ⌘Z.
+Links that try to open a new window load in the current tab. Mako's own shortcuts (⌘T ⌘W ⌘L ⌘, ⌘1–9 ⌥⌘C) win over pages; every other shortcut goes to the page first, so web editors keep ⌘Z.
 
 ## Icon
 

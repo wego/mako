@@ -33,3 +33,4 @@ Each file: H1 title, one paragraph of user-visible behavior, then `Sub-features`
 - [Blocklist](./blocklist.md) covers blocked and allowed hosts and live config edits.
 - [Accessibility tree](./accessibility.md) covers the handles agents rely on.
 - [Page shortcuts](./page-shortcuts.md) covers which ⌘ keys reach web pages.
+- [Developer console](./devtools.md) covers opening, using, and closing the Web Inspector.
