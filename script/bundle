@@ -60,4 +60,6 @@ ENT
 else
   codesign --force --options runtime --sign "${SIGN_IDENTITY:--}" build/Mako.app
 fi
+# Only the installed copy should be offered as a browser for http/https links.
+/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -u "$PWD/build/Mako.app" 2>/dev/null || true
 du -sh build/Mako.app
