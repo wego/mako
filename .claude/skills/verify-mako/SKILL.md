@@ -88,7 +88,7 @@ Builds, then runs every `features/*.md` recipe against fresh instances, then `sc
 .claude/skills/verify-mako/scripts/perf
 ```
 
-Five fresh launches on local `data:` pages; checks median launch-to-first-page, ⌘T and ⌘1 latency (`makoctl time-key`, key press to title change in one process), memory with 3 tabs, bundle size, and the Rust core's per-navigation parse+check (`cargo test --release -- --ignored perf_budget`). Budgets live at the top of the script, about 1.5× measured medians; `perf.log` in the evidence dir keeps a line per run. A miss is a regression to fix, not a budget to raise; raise one only with a stated reason in the commit.
+`PERF_N` (default 8) fresh launches on local `data:` pages. Primary numbers come from inside Mako (`MAKO_PERF=1`, set by `control-mako`): launch to interactive (process start until the main thread first idles), launch to first page, and ⌘T / ⌘1 from input event until the main thread idles. Also memory with 3 tabs, bundle size, and the Rust core's per-navigation parse+check. Budgets live at the top of the script, about 1.5× measured medians; `perf.log` in the evidence dir keeps a line per run. A miss is a regression to fix, not a budget to raise; raise one only with a stated reason in the commit. To decide whether a change is faster, use `scripts/ab <base> <candidate>` (paired, interleaved), not two `perf` runs.
 
 ## Feature map
 

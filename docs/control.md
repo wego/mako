@@ -86,7 +86,7 @@ Every command is `makoctl <pid> <command> [args]`. Commands that send input (`ke
 
 | Command | Output |
 | --- | --- |
-| `makoctl <pid> time-key <combo> <substring>` | Milliseconds from the key press until the title contains the substring, polling every 5 ms inside one process so tool start-up is not counted. Used by the performance budgets. Exit 5 after 5 s. |
+| `makoctl <pid> time-key <combo> <substring>` | Milliseconds from the key press until the title contains the substring, polling every 5 ms inside one process so tool start-up is not counted. Includes macOS's ~50 ms accessibility title delay, and the 5 ms polling itself loads Mako's main thread, so use Mako's in-app `MAKO_PERF` timings (`perf`, `ab`) to judge Mako's speed. Exit 5 after 5 s. |
 
 ### Exit codes
 

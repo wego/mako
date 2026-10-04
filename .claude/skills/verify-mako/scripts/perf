@@ -4,9 +4,9 @@
 #
 # Primary numbers come from inside Mako (MAKO_PERF=1, set by control-mako):
 # time from the input event until the main thread next idles, and process start
-# to first page loaded. Those are what a user feels. The end-to-end numbers seen
-# through accessibility include ~50ms of macOS title-propagation delay that Mako
-# cannot change, so they get loose backstop budgets only.
+# to first page loaded. Those are what a user feels. Tab actions are driven with
+# key + wait-title (50ms polls): makoctl time-key polls Mako's AX title every 5ms,
+# which keeps Mako's main thread busy and inflates the in-app numbers it measures.
 #
 # Uses local data: pages so network speed never moves the numbers. Budgets sit
 # ~1.5x above measured medians; a miss is a regression, not noise. Tighten them
@@ -24,8 +24,6 @@ APP_LAUNCH_MS=520     # in-app: process start to first page loaded, incl. WebKit
 APP_NEW_TAB_MS=55     # in-app: cmd+T event until main thread idle (median ~37)
 APP_SWITCH_MS=22      # in-app: cmd+1 event until main thread idle (median ~14)
 E2E_LAUNCH_MS=900     # backstop: launch command to title visible via AX
-E2E_NEW_TAB_MS=200    # backstop: cmd+T to new title visible via AX
-E2E_SWITCH_MS=150     # backstop: cmd+1 to title visible via AX
 RSS_MB=170            # app process resident memory with 3 tabs loaded
 BUNDLE_MB=5           # build/Mako.app on disk
 CORE_US=200           # enforced inside the Rust test itself
@@ -56,7 +54,7 @@ logpid=$!
 sleep 1
 
 page() { echo "data:text/html,<title>$1</title><h1>$1</h1>"; }
-launches=() news=() switches=() rss=0
+launches=() rss=0
 for i in $(seq 1 "$N"); do
   $C stop >/dev/null 2>&1
   t0=$(now_ms)
@@ -66,10 +64,10 @@ for i in $(seq 1 "$N"); do
   launches+=($(($(now_ms) - t0)))
   "$M" "$P" pointer-center
   sleep 0.3
-  news+=($($M "$P" time-key cmd+t "New Tab – 2/2"))
+  $M "$P" key cmd+t; $M "$P" wait-title "New Tab – 2/2" 5 >/dev/null
   $M "$P" key escape
   sleep 0.3
-  switches+=($($M "$P" time-key cmd+1 "first – 1/2"))
+  $M "$P" key cmd+1; $M "$P" wait-title "first – 1/2" 5 >/dev/null
   if [ "$i" = "$N" ]; then
     $M "$P" key cmd+2; $M "$P" key cmd+l; $M "$P" type "$(page second)"; $M "$P" key return; $M "$P" wait-title second 5 >/dev/null
     $M "$P" key cmd+t; $M "$P" key cmd+l; $M "$P" type "$(page third)"; $M "$P" key return; $M "$P" wait-title third 5 >/dev/null
@@ -87,8 +85,6 @@ app_launch=$(app_ms launchToFirstPage)
 app_new_tab=$(app_ms newTab)
 app_switch=$(app_ms selectTab)
 e2e_launch=$(printf '%s\n' "${launches[@]}" | median)
-e2e_new_tab=$(printf '%s\n' "${news[@]}" | median)
-e2e_switch=$(printf '%s\n' "${switches[@]}" | median)
 bundle=$(( ($(du -sk build/Mako.app | cut -f1) + 1023) / 1024 ))
 
 budget app-launch-to-interactive "$app_interactive" $APP_INTERACTIVE_MS ms
@@ -96,8 +92,6 @@ budget app-launch-to-first-page "$app_launch" $APP_LAUNCH_MS ms
 budget app-new-tab "$app_new_tab" $APP_NEW_TAB_MS ms
 budget app-tab-switch "$app_switch" $APP_SWITCH_MS ms
 budget e2e-launch "$e2e_launch" $E2E_LAUNCH_MS ms
-budget e2e-new-tab "$e2e_new_tab" $E2E_NEW_TAB_MS ms
-budget e2e-tab-switch "$e2e_switch" $E2E_SWITCH_MS ms
 budget memory-3-tabs "$rss" $RSS_MB MB
 budget bundle-size "$bundle" $BUNDLE_MB MB
 if out=$(cargo test --release -q --manifest-path core/Cargo.toml -- --ignored --nocapture perf_budget 2>&1); then
@@ -106,7 +100,7 @@ else
   echo "FAIL core: $(echo "$out" | grep -o 'parse+check took .*' | head -1)"; fails=$((fails + 1))
 fi
 
-printf 'n=%s app_interactive=%s app_launch=%s app_new_tab=%s app_switch=%s e2e_launch=%s e2e_new_tab=%s e2e_switch=%s rss_mb=%s bundle_mb=%s\n' \
-  "$N" "$app_interactive" "$app_launch" "$app_new_tab" "$app_switch" "$e2e_launch" "$e2e_new_tab" "$e2e_switch" "$rss" "$bundle" >>"$E/perf.log"
+printf 'n=%s app_interactive=%s app_launch=%s app_new_tab=%s app_switch=%s e2e_launch=%s rss_mb=%s bundle_mb=%s\n' \
+  "$N" "$app_interactive" "$app_launch" "$app_new_tab" "$app_switch" "$e2e_launch" "$rss" "$bundle" >>"$E/perf.log"
 echo "== $fails budget(s) missed; history in $E/perf.log"
 exit "$fails"
