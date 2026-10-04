@@ -30,5 +30,34 @@ cat > "$app/Info.plist" <<PLIST
 </dict></plist>
 PLIST
 # SIGN_IDENTITY: a stable cert keeps macOS permissions across rebuilds; default ad-hoc.
-codesign --force --options runtime --sign "${SIGN_IDENTITY:--}" build/Mako.app
+# PROVISIONING_PROFILE: a macOS profile granting Apple's browser passkey entitlement
+# (com.apple.developer.web-browser.public-key-credential) for com.chuyeow.mako.
+# macOS kills a binary that claims the entitlement without such a profile, so it is
+# only added when the profile is checked here first.
+if [ -n "${PROVISIONING_PROFILE:-}" ]; then
+  profile=$(mktemp)
+  security cms -D -i "$PROVISIONING_PROFILE" > "$profile" 2>/dev/null || { echo "cannot read $PROVISIONING_PROFILE"; exit 1; }
+  get() { /usr/libexec/PlistBuddy -c "Print :$1" "$profile" 2>/dev/null; }
+  team=$(get TeamIdentifier:0)
+  [ "$(get Platform:0)" = OSX ] || { echo "$PROVISIONING_PROFILE is not a macOS profile ($(get Platform:0))"; exit 1; }
+  [ "$(get Entitlements:com.apple.application-identifier)" = "$team.com.chuyeow.mako" ] ||
+    { echo "$PROVISIONING_PROFILE is for $(get Entitlements:com.apple.application-identifier), not $team.com.chuyeow.mako"; exit 1; }
+  [ "$(get Entitlements:com.apple.developer.web-browser.public-key-credential)" = true ] ||
+    { echo "$PROVISIONING_PROFILE does not grant com.apple.developer.web-browser.public-key-credential"; exit 1; }
+  cp "$PROVISIONING_PROFILE" "$app/embedded.provisionprofile"
+  entitlements=build/Mako.entitlements
+  cat > "$entitlements" <<ENT
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>com.apple.application-identifier</key><string>$team.com.chuyeow.mako</string>
+  <key>com.apple.developer.team-identifier</key><string>$team</string>
+  <key>com.apple.developer.web-browser.public-key-credential</key><true/>
+</dict></plist>
+ENT
+  rm -f "$profile"
+  codesign --force --options runtime --entitlements "$entitlements" --sign "${SIGN_IDENTITY:?a profile needs SIGN_IDENTITY from team $team}" build/Mako.app
+else
+  codesign --force --options runtime --sign "${SIGN_IDENTITY:--}" build/Mako.app
+fi
 du -sh build/Mako.app

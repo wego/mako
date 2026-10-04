@@ -27,6 +27,20 @@ Links that try to open a new window load in the current tab. Mako's own shortcut
 
 `script/icon design/icon-variants/<variant>.png` regenerates `app/Resources/AppIcon.icns`. Six variants were generated with `gpt-image-2.5-sunburst`.
 
+## Passkeys
+
+WebKit only runs passkey (WebAuthn) requests in apps that hold Apple's restricted `com.apple.developer.web-browser.public-key-credential` entitlement; without it every site's passkey prompt fails with `NotAllowedError`, and signing with the entitlement but no profile makes macOS kill the app at launch. To enable passkeys:
+
+1. The Account Holder of an Apple Developer organization account registers the App ID `com.chuyeow.mako` and requests the entitlement at <https://developer.apple.com/contact/request/macos-browsers-passkeys/>. Apple reviews it against its web-browser criteria.
+2. Once granted, create a macOS development (or Developer ID) provisioning profile for `com.chuyeow.mako` that includes the entitlement, and download it.
+3. Build with it:
+
+       SIGN_IDENTITY="<cert from the same team>" PROVISIONING_PROFILE=path/to/Mako.provisionprofile script/bundle
+
+   `script/bundle` refuses a profile that is not for macOS, not for `com.chuyeow.mako`, or lacks the entitlement.
+
+Verification copies (`control-mako`) never get passkeys: they are re-signed ad hoc under their own bundle IDs.
+
 ## Scripting and agents
 
 `docs/control.md` documents how to drive Mako from scripts or agents: launching an isolated instance, reading tabs and page text, pressing menus and buttons, and the AX identifiers Mako exposes.
