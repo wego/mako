@@ -24,6 +24,11 @@ pub extern "C" fn mako_config_error(config: *const c_char) -> *mut c_char {
 }
 
 #[no_mangle]
+pub extern "C" fn mako_restore_session(cfg: *const c_char) -> bool {
+    config(cfg).restore_session
+}
+
+#[no_mangle]
 pub extern "C" fn mako_max_tabs(cfg: *const c_char) -> u32 {
     config(cfg).max_tabs as u32
 }

@@ -1,6 +1,12 @@
 import Foundation
 import MakoCore
 
+/// Open tabs as http(s) URLs plus the active index, saved at quit and restored at launch.
+struct Session: Codable {
+    var tabs: [URL]
+    var active: Int
+}
+
 /// Swift face of the Rust core. Reads the config file on each call so edits apply live.
 enum Core {
     /// MAKO_CONFIG lets verification runs use a disposable config.
@@ -10,6 +16,7 @@ enum Core {
     static let template = """
         # Mako config – edits apply on the next navigation.
         max_tabs = 3
+        # restore_session = false   # start empty instead of reopening last session's tabs
         # search = https://duckduckgo.com/?q=%s
 
         # block <domain> [HH:MM-HH:MM] [mon-fri | sat,sun | weekdays | weekends | daily]
@@ -34,6 +41,23 @@ enum Core {
 
     static var configError: String? { take(mako_config_error(config)) }
     static var maxTabs: Int { Int(mako_max_tabs(config)) }
+    static var restoreSession: Bool { mako_restore_session(config) }
+
+    /// Lives beside the config so MAKO_CONFIG runs get their own session too.
+    static var sessionURL: URL { configURL.deletingLastPathComponent().appending(path: "session.json") }
+
+    static func loadSession() -> Session? {
+        guard restoreSession, let data = try? Data(contentsOf: sessionURL) else { return nil }
+        return try? JSONDecoder().decode(Session.self, from: data)
+    }
+
+    static func save(_ session: Session) {
+        if restoreSession {
+            try? JSONEncoder().encode(session).write(to: sessionURL, options: .atomic)
+        } else {
+            try? FileManager.default.removeItem(at: sessionURL)
+        }
+    }
     static func resolve(_ input: String) -> URL? { take(mako_resolve(config, input)).flatMap(URL.init(string:)) }
 
     static func blockReason(host: String, at date: Date = .now) -> String? {

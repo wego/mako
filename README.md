@@ -36,6 +36,7 @@ The `verify-mako` skill (`.claude/skills/verify-mako/`) launches an isolated ins
 `~/.config/mako/config`, re-read on every navigation:
 
     max_tabs = 3
+    restore_session = true                 # reopen last session's tabs at launch (default)
     search = https://duckduckgo.com/?q=%s
     block x.com                            # always, includes subdomains
     block youtube.com 09:00-18:00 weekdays # days: mon-fri, sat,sun, weekends, daily

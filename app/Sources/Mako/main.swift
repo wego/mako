@@ -7,7 +7,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_: Notification) {
         Core.ensureConfig()
-        browser = Browser()
+        browser = Browser(restoring: Core.loadSession())
         NSApp.mainMenu = makeMenu()
         CommandLine.arguments.dropFirst().compactMap(URL.init(string:)).filter { $0.scheme != nil }.forEach(browser.open)
         pending.forEach(browser.open)
@@ -21,6 +21,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_: NSApplication) -> Bool { true }
+
+    func applicationWillTerminate(_: Notification) { Core.save(browser.session) }
 
     private func makeMenu() -> NSMenu {
         func menu(_ title: String, _ items: [NSMenuItem]) -> NSMenuItem {

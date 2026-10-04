@@ -35,7 +35,7 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
     private let field = NSTextField()
     private let hint = NSTextField(labelWithString: "")
 
-    override init() {
+    init(restoring session: Session?) {
         window = MenuFirstWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1200, height: 800),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
@@ -65,15 +65,39 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         webConfig.preferences.isElementFullscreenEnabled = true
         webConfig.preferences.setValue(true, forKey: "developerExtrasEnabled")
         buildOmnibox()
-        newTab()
-        window.makeKeyAndOrderFront(nil)
-        showOmnibox()
+        let restored = session?.tabs.prefix(Core.maxTabs) ?? []
+        if restored.isEmpty {
+            newTab()
+            window.makeKeyAndOrderFront(nil)
+            showOmnibox()
+        } else {
+            for url in restored {
+                newTab()
+                web.load(URLRequest(url: url))
+            }
+            select(min(max(session?.active ?? 0, 0), tabs.count - 1))
+            window.makeKeyAndOrderFront(nil)
+        }
+    }
+
+    /// Tabs without an http(s) page (blank, block, error) are not worth restoring.
+    var session: Session {
+        var urls: [URL] = []
+        var activeIndex = 0
+        for (i, tab) in tabs.enumerated() {
+            guard let url = page(tab) else { continue }
+            if i == active { activeIndex = urls.count }
+            urls.append(url)
+        }
+        return Session(tabs: urls, active: activeIndex)
     }
 
     private var web: WKWebView { tabs[active] }
     /// Current page, ignoring the blank/block/error pages Mako loads itself.
-    private var pageURL: URL? {
-        guard let url = web.url, ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { return nil }
+    private var pageURL: URL? { page(web) }
+
+    private func page(_ webView: WKWebView) -> URL? {
+        guard let url = webView.url, ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { return nil }
         return url
     }
 
