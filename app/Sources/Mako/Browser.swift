@@ -20,7 +20,7 @@ final class MenuFirstWindow: NSWindow {
 
 /// One window, a few tabs, no tab bar. ⌘L summons the omnibox, which also lists tabs.
 @MainActor
-final class Browser: NSObject, NSWindowDelegate, NSMenuDelegate, WKNavigationDelegate, WKUIDelegate, NSTextFieldDelegate {
+final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate, NSTextFieldDelegate {
     let window: NSWindow
     private var tabs: [WKWebView] = []
     private var active = 0
@@ -28,6 +28,8 @@ final class Browser: NSObject, NSWindowDelegate, NSMenuDelegate, WKNavigationDel
     private let webConfig = WKWebViewConfiguration()
     private let container = NSView()
     private let blank = NSImageView()
+    /// Kept in sync on every tab change so ⌘1–9 and the AX tree never depend on the menu being opened.
+    let tabsMenu = NSMenu(title: "Tabs")
     private let omnibox = NSGlassEffectView()
     private let field = NSTextField()
     private let hint = NSTextField(labelWithString: "")
@@ -42,6 +44,8 @@ final class Browser: NSObject, NSWindowDelegate, NSMenuDelegate, WKNavigationDel
         window.tabbingMode = .disallowed
         window.setFrameAutosaveName("main")
         window.contentView = container
+        container.setAccessibilityElement(true)
+        container.setAccessibilityRole(.group)
         container.setAccessibilityIdentifier("mako.page")
         container.setAccessibilityLabel("Page")
         blank.setAccessibilityIdentifier("mako.blank")
@@ -79,6 +83,8 @@ final class Browser: NSObject, NSWindowDelegate, NSMenuDelegate, WKNavigationDel
     // MARK: Omnibox
 
     private func buildOmnibox() {
+        omnibox.setAccessibilityElement(true)
+        omnibox.setAccessibilityRole(.group)
         omnibox.setAccessibilityIdentifier("mako.omnibox")
         omnibox.setAccessibilityLabel("Address bar")
         field.setAccessibilityIdentifier("mako.omnibox.field")
@@ -194,6 +200,7 @@ final class Browser: NSObject, NSWindowDelegate, NSMenuDelegate, WKNavigationDel
         blank.isHidden = !isBlank
         web.isHidden = isBlank
         if !omnibox.isHidden { updateHint() }
+        rebuildTabsMenu()
     }
 
     private func updateTabIdentifiers() {
@@ -202,8 +209,8 @@ final class Browser: NSObject, NSWindowDelegate, NSMenuDelegate, WKNavigationDel
         }
     }
 
-    func menuNeedsUpdate(_ menu: NSMenu) {
-        menu.removeAllItems()
+    private func rebuildTabsMenu() {
+        tabsMenu.removeAllItems()
         for (i, tab) in tabs.enumerated() {
             let item = NSMenuItem(title: tabLabel(tab), action: #selector(selectTab(_:)),
                                   keyEquivalent: i < 9 ? "\(i + 1)" : "")
@@ -211,7 +218,7 @@ final class Browser: NSObject, NSWindowDelegate, NSMenuDelegate, WKNavigationDel
             item.target = self
             item.tag = i
             item.state = i == active ? .on : .off
-            menu.addItem(item)
+            tabsMenu.addItem(item)
         }
     }
 

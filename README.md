@@ -15,12 +15,20 @@ Swift/AppKit shell over WKWebView; policy and omnibox logic in a small Rust core
 | --- | --- |
 | ⌘L | Omnibox (also lists open tabs) |
 | ⌘T / ⌘W | New tab (refused at the cap) / close tab |
-| ⌘1–9 | Switch tab |
+| ⌘1–9 / Tabs menu | Switch tab (the menu lists open tabs by name) |
 | ⌘[ / ⌘] | Back / forward |
 | ⌘R, ⌘= ⌘- ⌘0 | Reload, zoom |
 | ⌘, | Edit config |
 
-Links that try to open a new window load in the current tab.
+Links that try to open a new window load in the current tab. Mako's own shortcuts (⌘T ⌘W ⌘L ⌘, ⌘1–9) win over pages; every other shortcut goes to the page first, so web editors keep ⌘Z.
+
+## Icon
+
+`script/icon design/icon-variants/<variant>.png` regenerates `app/Resources/AppIcon.icns`. Six variants were generated with `gpt-image-2.5-sunburst`.
+
+## Verification
+
+The `verify-mako` skill (`.claude/skills/verify-mako/`) launches an isolated instance (`MAKO_CONFIG` points at a throwaway config) and drives it through the accessibility API. Needs Accessibility and Screen Recording permission for the terminal.
 
 ## Config
 

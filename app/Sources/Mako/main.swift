@@ -36,8 +36,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return i
         }
         let main = NSMenu()
-        let tabs = menu("Tabs", [])
-        tabs.submenu?.delegate = browser
+        let tabs = NSMenuItem(title: "Tabs", action: nil, keyEquivalent: "")
+        tabs.submenu = browser.tabsMenu
         [
             menu("Mako", [
                 item("Settings…", #selector(Browser.openConfig), ","),
