@@ -354,7 +354,11 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
     }
 
     func windowWillClose(_ notification: Notification) {
-        popups.removeAll { $0 === notification.object as? NSWindow }
+        guard let closing = notification.object as? NSWindow, popups.contains(closing) else { return }
+        popups.removeAll { $0 === closing }
+        // Hand focus back to the page that opened the sign-in.
+        window.makeKeyAndOrderFront(nil)
+        window.makeFirstResponder(omnibox.isHidden ? web : field)
     }
 
     func webView(_ webView: WKWebView, didFinish _: WKNavigation!) {
