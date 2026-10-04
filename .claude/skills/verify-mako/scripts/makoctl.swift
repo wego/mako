@@ -97,6 +97,7 @@ let usage = """
     makoctl <pid> menu <Menu> <Item>       press a menu item via AX
     makoctl <pid> press <name>             AXPress the first control whose title/desc/value is name (web buttons, links)
     makoctl <pid> text                     full visible text of the active page, one line per text run
+    makoctl <pid> pointer-center           move the mouse pointer over the middle of the page (perf runs)
     makoctl <pid> windows                  one line per window (popups have id="mako.popup")
     makoctl <pid> menu-items <Menu>        list a menu's item titles (checked = active)
     makoctl <pid> key <combo>              e.g. return, escape, cmd+t, cmd+1, cmd+z
@@ -180,6 +181,13 @@ case "text":
     }
     guard let area = webArea(mainWindow()) else { fail("no page content", 4) }
     collect(area)
+case "pointer-center":
+    // Cursor work depends on where the pointer is; perf runs park it over the page.
+    guard let pos = attr(mainWindow(), kAXPositionAttribute), let size = attr(mainWindow(), kAXSizeAttribute) else { fail("no window frame", 4) }
+    var p = CGPoint.zero, sz = CGSize.zero
+    AXValueGetValue(pos as! AXValue, .cgPoint, &p)
+    AXValueGetValue(size as! AXValue, .cgSize, &sz)
+    CGWarpMouseCursorPosition(CGPoint(x: p.x + sz.width / 2, y: p.y + sz.height * 0.6))
 case "windows":
     for w in (attr(app, kAXWindowsAttribute) as? [AXUIElement]) ?? [] { print(line(w)) }
 case "menu-items":

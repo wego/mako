@@ -1,0 +1,59 @@
+#!/bin/bash
+# Paired A/B latency comparison of two Mako checkouts, robust to background load.
+# Usage: ab <base-checkout> <candidate-checkout> [rounds]   (default 10 rounds)
+#
+# Each round launches base then candidate back to back (alternating which goes
+# first), so machine load hits both alike, then performs: first page, cmd+T,
+# escape, cmd+1. Mako's in-app timings (MAKO_PERF=1) are read per process from
+# the unified log. The pointer is parked over the page first: on a Mac with a
+# customised pointer every cursor update re-renders the cursor image, so where the
+# pointer sits moves the numbers. Prints per-metric medians, the median paired delta, and the
+# candidate's win rate. Both checkouts must already be built (control-mako build).
+set -u
+base=$(cd "$1" && pwd); cand=$(cd "$2" && pwd); rounds=${3:-10}
+out=$(mktemp -d)
+
+one() {  # one <checkout> <label>
+  local repo=$1 label=$2 C M P from
+  C="$repo/.claude/skills/verify-mako/scripts/control-mako"; M="$repo/verify-runs/.bin/makoctl"
+  export MAKO_RUN="$repo/verify-runs/ab"
+  "$C" stop >/dev/null 2>&1
+  from=$(date '+%Y-%m-%d %H:%M:%S')
+  "$C" launch "" "data:text/html,<title>first</title><h1>first</h1>" >/dev/null || { echo "launch failed: $label" >&2; return 1; }
+  P=$("$C" pid)
+  "$M" "$P" wait-title first 10 >/dev/null || return 1
+  "$M" "$P" pointer-center
+  sleep 0.3; "$M" "$P" key cmd+t; "$M" "$P" wait-title "New Tab – 2/2" 5 >/dev/null
+  "$M" "$P" key escape; sleep 0.3
+  "$M" "$P" key cmd+1; "$M" "$P" wait-title "first – 1/2" 5 >/dev/null
+  sleep 0.5
+  log show --info --start "$from" --predicate "processID == $P AND subsystem == \"com.wego.mako\" AND eventMessage BEGINSWITH \"perf \"" --style compact 2>/dev/null |
+    grep -oE 'perf [A-Za-z]+ [0-9]+us' | while read -r _ metric us; do echo "$label $metric ${us%us}"; done >>"$out/samples"
+  "$C" stop >/dev/null 2>&1
+}
+
+for i in $(seq 1 "$rounds"); do
+  if [ $((i % 2)) = 1 ]; then one "$base" base; one "$cand" cand; else one "$cand" cand; one "$base" base; fi
+  printf '.' >&2
+done
+echo >&2
+
+python3 - "$out/samples" "$rounds" <<'PY'
+import sys, statistics as st
+from collections import defaultdict
+rows = [l.split() for l in open(sys.argv[1])]
+data = defaultdict(lambda: defaultdict(list))
+for label, metric, us in rows:
+    data[metric][label].append(int(us) / 1000)
+for metric in ("launchToFirstPage", "newTab", "selectTab"):
+    b, c = data[metric]["base"], data[metric]["cand"]
+    if not b or not c:
+        print(f"{metric:18} missing samples (base {len(b)}, cand {len(c)})"); continue
+    n = min(len(b), len(c))
+    deltas = [c[i] - b[i] for i in range(n)]
+    wins = sum(d < 0 for d in deltas)
+    mb, mc = st.median(b), st.median(c)
+    print(f"{metric:18} base {mb:7.1f}ms  cand {mc:7.1f}ms  median paired delta {st.median(deltas):+7.1f}ms "
+          f"({(mc - mb) / mb * 100:+5.1f}%)  cand faster in {wins}/{n}")
+PY
+rm -rf "$out"
