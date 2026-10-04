@@ -11,6 +11,9 @@
 # Uses local data: pages so network speed never moves the numbers. Budgets sit
 # ~1.5x above measured medians; a miss is a regression, not noise. Tighten them
 # when things get faster. PERF_N (default 8) sets the number of fresh launches.
+# Tab budgets assume standard pointer colours: a custom-coloured pointer
+# (Accessibility > Display > Pointer) re-renders the cursor with a blur on every
+# view change and adds ~10ms to new tab and ~5ms to switch.
 set -u
 cd "$(dirname "$0")/../../../.."
 C=.claude/skills/verify-mako/scripts/control-mako
@@ -21,8 +24,8 @@ fails=0
 
 APP_INTERACTIVE_MS=420 # in-app: process start to main thread idle after launch (median ~285)
 APP_LAUNCH_MS=520     # in-app: process start to first page loaded, incl. WebKit start-up (median ~350)
-APP_NEW_TAB_MS=55     # in-app: cmd+T event until main thread idle (median ~37)
-APP_SWITCH_MS=22      # in-app: cmd+1 event until main thread idle (median ~14)
+APP_NEW_TAB_MS=40     # in-app: cmd+T event until main thread idle (median ~27)
+APP_SWITCH_MS=12      # in-app: cmd+1 event until main thread idle (median ~7)
 E2E_LAUNCH_MS=900     # backstop: launch command to title visible via AX
 RSS_MB=170            # app process resident memory with 3 tabs loaded
 BUNDLE_MB=5           # build/Mako.app on disk
