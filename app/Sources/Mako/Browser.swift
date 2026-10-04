@@ -4,6 +4,36 @@ import os
 
 let log = Logger(subsystem: "com.wego.mako", category: "browser")
 
+/// MAKO_PERF=1 (set by verification runs, never in daily use) logs how long an action
+/// keeps the main thread busy, from the input event until the run loop next idles.
+/// Logs action names only, never key characters.
+@MainActor enum Perf {
+    static let enabled = ProcessInfo.processInfo.environment["MAKO_PERF"] == "1"
+    private static var firstPageLogged = false
+
+    static func measure(_ action: StaticString) {
+        guard enabled, let start = NSApp.currentEvent?.timestamp else { return }
+        let observer = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.beforeWaiting.rawValue, false, 0) { o, _ in
+            log.info("perf \(action, privacy: .public) \(Int((ProcessInfo.processInfo.systemUptime - start) * 1_000_000))us")
+            CFRunLoopRemoveObserver(CFRunLoopGetMain(), o, .commonModes)
+        }
+        CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes)
+    }
+
+    /// Process start to the first page finishing its load.
+    static func firstPage() {
+        guard enabled, !firstPageLogged else { return }
+        firstPageLogged = true
+        var info = kinfo_proc()
+        var size = MemoryLayout<kinfo_proc>.size
+        var mib = [CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid()]
+        guard sysctl(&mib, 4, &info, &size, nil, 0) == 0 else { return }
+        let started = info.kp_proc.p_un.__p_starttime
+        let ms = (Date().timeIntervalSince1970 - (Double(started.tv_sec) + Double(started.tv_usec) / 1e6)) * 1000
+        log.info("perf launchToFirstPage \(Int(ms * 1000))us")
+    }
+}
+
 /// Offers only Mako-owned ⌘-shortcuts to the main menu first so pages cannot hijack
 /// tab and omnibox controls. Editing and navigation shortcuts keep AppKit's order.
 final class MenuFirstWindow: NSWindow {
@@ -270,7 +300,10 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
 
     // MARK: Menu actions
 
-    @objc func newTabAction(_: Any?) { if newTab() { showOmnibox(text: "") } }
+    @objc func newTabAction(_: Any?) {
+        Perf.measure("newTab")
+        if newTab() { showOmnibox(text: "") }
+    }
     @objc func openLocation(_: Any?) { showOmnibox() }
     @objc func back(_: Any?) { web.goBack() }
     @objc func forward(_: Any?) { web.goForward() }
@@ -278,7 +311,10 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
     @objc func zoomIn(_: Any?) { web.pageZoom += 0.1 }
     @objc func zoomOut(_: Any?) { web.pageZoom = max(0.3, web.pageZoom - 0.1) }
     @objc func zoomReset(_: Any?) { web.pageZoom = 1 }
-    @objc func selectTab(_ sender: NSMenuItem) { select(sender.tag) }
+    @objc func selectTab(_ sender: NSMenuItem) {
+        Perf.measure("selectTab")
+        select(sender.tag)
+    }
     @objc func openConfig(_: Any?) { NSWorkspace.shared.open(Core.configURL) }
 
     /// WebKit has no public API to open the Web Inspector; this is the private
@@ -293,6 +329,7 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
     }
 
     @objc func closeTab(_: Any?) {
+        Perf.measure("closeTab")
         let closing = tabs.remove(at: active)
         closing.removeFromSuperview()
         guard !tabs.isEmpty else {
@@ -362,6 +399,7 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
     }
 
     func webView(_ webView: WKWebView, didFinish _: WKNavigation!) {
+        Perf.firstPage()
         log.info("loaded tab \(self.tabs.firstIndex(of: webView) ?? -1)/\(self.tabs.count): \(webView.title ?? "", privacy: .public)")
     }
 

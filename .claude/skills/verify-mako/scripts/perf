@@ -1,33 +1,44 @@
 #!/bin/bash
 # Performance budgets for Mako. Prints one PASS/FAIL line per budget with the
-# measured value; exit status is the number of budgets missed.
-# Uses local data: pages so network speed never moves the numbers.
-# Budgets are ~1.5x medians measured 2026-10-04 on an M-series Mac (launch 530ms,
-# new tab 120ms, switch 75ms, 120MB, 3MB, core 61us); a miss means something got
-# slower, not noise. Tighten them when things get faster. Key timings come from
-# makoctl time-key, which times key press to title change inside one process.
+# measured median; exit status is the number of budgets missed (100 = skipped).
+#
+# Primary numbers come from inside Mako (MAKO_PERF=1, set by control-mako):
+# time from the input event until the main thread next idles, and process start
+# to first page loaded. Those are what a user feels. The end-to-end numbers seen
+# through accessibility include ~50ms of macOS title-propagation delay that Mako
+# cannot change, so they get loose backstop budgets only.
+#
+# Uses local data: pages so network speed never moves the numbers. Budgets sit
+# ~1.5x above measured medians; a miss is a regression, not noise. Tighten them
+# when things get faster. PERF_N (default 8) sets the number of fresh launches.
 set -u
 cd "$(dirname "$0")/../../../.."
 C=.claude/skills/verify-mako/scripts/control-mako
 M=verify-runs/.bin/makoctl
 E=${MAKO_RUN:-verify-runs/latest}/evidence
+N=${PERF_N:-8}
 fails=0
 
-LAUNCH_MS=800       # process start to first page rendered (title visible)
-NEW_TAB_MS=180      # cmd+T to the blank tab's title
-SWITCH_MS=120       # cmd+1 to the other tab's title
-RSS_MB=170          # app process resident memory with 3 tabs loaded
-BUNDLE_MB=5         # build/Mako.app on disk
-CORE_US=200         # enforced inside the Rust test itself
+APP_LAUNCH_MS=450     # in-app: process start to first page loaded
+APP_NEW_TAB_MS=35     # in-app: cmd+T event until main thread idle
+APP_SWITCH_MS=15      # in-app: cmd+1 event until main thread idle
+E2E_LAUNCH_MS=900     # backstop: launch command to title visible via AX
+E2E_NEW_TAB_MS=200    # backstop: cmd+T to new title visible via AX
+E2E_SWITCH_MS=150     # backstop: cmd+1 to title visible via AX
+RSS_MB=170            # app process resident memory with 3 tabs loaded
+BUNDLE_MB=5           # build/Mako.app on disk
+CORE_US=200           # enforced inside the Rust test itself
 
 now_ms() { python3 -c 'import time; print(int(time.time() * 1000))'; }
 median() { sort -n | awk '{a[NR]=$1} END {print a[int((NR + 1) / 2)]}'; }
 budget() {
   local name=$1 value=$2 limit=$3 unit=$4
-  if [ "$value" -le "$limit" ]; then echo "PASS $name ${value}${unit} (budget ${limit}${unit})"
+  if [ -z "$value" ]; then echo "FAIL $name: no measurement"; fails=$((fails + 1))
+  elif awk "BEGIN {exit !($value <= $limit)}"; then echo "PASS $name ${value}${unit} (budget ${limit}${unit})"
   else echo "FAIL $name ${value}${unit} (budget ${limit}${unit})"; fails=$((fails + 1)); fi
 }
-trap '$C stop >/dev/null 2>&1' EXIT
+logpid=
+trap '$C stop >/dev/null 2>&1; [ -n "$logpid" ] && kill "$logpid" 2>/dev/null' EXIT
 
 # A loaded machine measures itself, not Mako: skip rather than report a false PASS or FAIL.
 load=$(sysctl -n vm.loadavg | awk '{print int($2 + 0.5)}')
@@ -36,25 +47,28 @@ if [ "$load" -gt "$cores" ]; then
   echo "SKIP perf: machine busy (1-min load $load > $cores cores); inconclusive, rerun when idle"
   exit 100
 fi
+
 mkdir -p "$E"
+applog="$E/perf-app.log"
+log stream --level info --predicate 'subsystem == "com.wego.mako" AND eventMessage BEGINSWITH "perf "' --style compact >"$applog" 2>&1 &
+logpid=$!
+sleep 1
 
 page() { echo "data:text/html,<title>$1</title><h1>$1</h1>"; }
-
 launches=() news=() switches=() rss=0
-for i in 1 2 3 4 5; do
+for i in $(seq 1 "$N"); do
   $C stop >/dev/null 2>&1
   t0=$(now_ms)
   $C launch "" "$(page first)" >/dev/null || { echo "FAIL launch"; exit 99; }
   P=$($C pid)
   $M "$P" wait-title first 10 >/dev/null || { echo "FAIL first page never rendered"; exit 99; }
   launches+=($(($(now_ms) - t0)))
-
+  sleep 0.3
   news+=($($M "$P" time-key cmd+t "New Tab – 2/2"))
   $M "$P" key escape
-
+  sleep 0.3
   switches+=($($M "$P" time-key cmd+1 "first – 1/2"))
-
-  if [ "$i" = 5 ]; then
+  if [ "$i" = "$N" ]; then
     $M "$P" key cmd+2; $M "$P" key cmd+l; $M "$P" type "$(page second)"; $M "$P" key return; $M "$P" wait-title second 5 >/dev/null
     $M "$P" key cmd+t; $M "$P" key cmd+l; $M "$P" type "$(page third)"; $M "$P" key return; $M "$P" wait-title third 5 >/dev/null
     sleep 1
@@ -62,15 +76,24 @@ for i in 1 2 3 4 5; do
   fi
 done
 $C stop >/dev/null 2>&1
+sleep 1
+kill "$logpid" 2>/dev/null; wait "$logpid" 2>/dev/null; logpid=
 
-launch=$(printf '%s\n' "${launches[@]}" | median)
-new_tab=$(printf '%s\n' "${news[@]}" | median)
-switch=$(printf '%s\n' "${switches[@]}" | median)
+app_ms() { grep -oE "perf $1 [0-9]+us" "$applog" | grep -oE '[0-9]+us' | tr -d us | median | awk '{printf "%.1f", $1 / 1000}'; }
+app_launch=$(app_ms launchToFirstPage)
+app_new_tab=$(app_ms newTab)
+app_switch=$(app_ms selectTab)
+e2e_launch=$(printf '%s\n' "${launches[@]}" | median)
+e2e_new_tab=$(printf '%s\n' "${news[@]}" | median)
+e2e_switch=$(printf '%s\n' "${switches[@]}" | median)
 bundle=$(( ($(du -sk build/Mako.app | cut -f1) + 1023) / 1024 ))
 
-budget launch-to-first-page "$launch" $LAUNCH_MS ms
-budget new-tab "$new_tab" $NEW_TAB_MS ms
-budget tab-switch "$switch" $SWITCH_MS ms
+budget app-launch-to-first-page "$app_launch" $APP_LAUNCH_MS ms
+budget app-new-tab "$app_new_tab" $APP_NEW_TAB_MS ms
+budget app-tab-switch "$app_switch" $APP_SWITCH_MS ms
+budget e2e-launch "$e2e_launch" $E2E_LAUNCH_MS ms
+budget e2e-new-tab "$e2e_new_tab" $E2E_NEW_TAB_MS ms
+budget e2e-tab-switch "$e2e_switch" $E2E_SWITCH_MS ms
 budget memory-3-tabs "$rss" $RSS_MB MB
 budget bundle-size "$bundle" $BUNDLE_MB MB
 if out=$(cargo test --release -q --manifest-path core/Cargo.toml -- --ignored --nocapture perf_budget 2>&1); then
@@ -79,7 +102,7 @@ else
   echo "FAIL core: $(echo "$out" | grep -o 'parse+check took .*' | head -1)"; fails=$((fails + 1))
 fi
 
-printf 'launch=%s new_tab=%s switch=%s rss_mb=%s bundle_mb=%s raw_launch=%s\n' \
-  "$launch" "$new_tab" "$switch" "$rss" "$bundle" "${launches[*]}" >>"$E/perf.log"
+printf 'n=%s app_launch=%s app_new_tab=%s app_switch=%s e2e_launch=%s e2e_new_tab=%s e2e_switch=%s rss_mb=%s bundle_mb=%s\n' \
+  "$N" "$app_launch" "$app_new_tab" "$app_switch" "$e2e_launch" "$e2e_new_tab" "$e2e_switch" "$rss" "$bundle" >>"$E/perf.log"
 echo "== $fails budget(s) missed; history in $E/perf.log"
 exit "$fails"

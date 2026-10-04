@@ -48,7 +48,7 @@ refuse_if_running() {
 # start [url...]: opens the run's app copy on the existing $run/state (config, session.json).
 start() {
   # LaunchServices launch (-n: separate instance); a bare exec gets no key events.
-  open -n -a "$app" --env MAKO_CONFIG="$run/state/config" --args "$@"
+  open -n -a "$app" --env MAKO_CONFIG="$run/state/config" --env MAKO_PERF=1 --args "$@"
   i=0
   until pid=$(pgrep -f "$exe" | head -1) && [ -n "$pid" ]; do
     i=$((i + 1)); [ $i -gt 50 ] && { echo "process never started"; exit 1; }
