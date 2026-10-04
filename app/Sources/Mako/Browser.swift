@@ -26,6 +26,8 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
     private var tabs: [WKWebView] = []
     private var active = 0
     private var observations: [NSKeyValueObservation] = []
+    /// Script-opened windows (OAuth sign-in) live outside the tab list and the tab cap.
+    private var popups: [NSWindow] = []
     private let webConfig = WKWebViewConfiguration()
     private let container = NSView()
     private let blank = NSImageView()
@@ -64,6 +66,9 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         ])
         webConfig.preferences.isElementFullscreenEnabled = true
         webConfig.preferences.setValue(true, forKey: "developerExtrasEnabled")
+        // Google and others refuse sign-in from web views whose user agent lacks Safari's token.
+        let safari = Bundle(path: "/Applications/Safari.app")?.infoDictionary?["CFBundleShortVersionString"] as? String ?? "26.0"
+        webConfig.applicationNameForUserAgent = "Version/\(safari) Safari/605.1.15"
         buildOmnibox()
         let restored = session?.tabs.prefix(Core.maxTabs) ?? []
         if restored.isEmpty {
@@ -318,10 +323,38 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
     }
 
     /// target=_blank and window.open stay in the current tab.
-    func webView(_ webView: WKWebView, createWebViewWith _: WKWebViewConfiguration,
-                 for action: WKNavigationAction, windowFeatures _: WKWindowFeatures) -> WKWebView? {
-        webView.load(action.request)
-        return nil
+    /// Clicked target=_blank links stay in the tab. Script popups get a real window built
+    /// from WebKit's configuration, which is what keeps window.opener alive for OAuth.
+    func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
+                 for action: WKNavigationAction, windowFeatures features: WKWindowFeatures) -> WKWebView? {
+        guard action.navigationType != .linkActivated else {
+            webView.load(action.request)
+            return nil
+        }
+        let popup = WKWebView(frame: .zero, configuration: configuration)
+        popup.navigationDelegate = self
+        popup.uiDelegate = self
+        let size = NSSize(width: features.width?.doubleValue ?? 520, height: features.height?.doubleValue ?? 680)
+        let w = NSWindow(contentRect: NSRect(origin: .zero, size: size),
+                         styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+        w.isReleasedWhenClosed = false
+        w.contentView = popup
+        w.delegate = self
+        w.setAccessibilityIdentifier("mako.popup")
+        observations.append(popup.observe(\.title) { [weak w] p, _ in MainActor.assumeIsolated { w?.title = p.title ?? "" } })
+        w.center()
+        w.makeKeyAndOrderFront(nil)
+        popups.append(w)
+        log.info("popup \(action.request.url?.absoluteString ?? "", privacy: .public)")
+        return popup
+    }
+
+    func webViewDidClose(_ webView: WKWebView) {
+        popups.first { $0.contentView === webView }?.close()
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        popups.removeAll { $0 === notification.object as? NSWindow }
     }
 
     func webView(_ webView: WKWebView, didFinish _: WKNavigation!) {
