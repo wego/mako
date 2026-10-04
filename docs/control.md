@@ -77,7 +77,7 @@ Every command is `makoctl <pid> <command> [args]`. Commands that send input (`ke
 
 | Command | Effect |
 | --- | --- |
-| `makoctl <pid> key <combo>` | Presses a key. Modifiers `cmd`, `shift`, `opt` joined with `+`. Keys: `return`, `escape`, `tab`, `t`, `w`, `l`, `r`, `z`, `c`, `[`, `]`, `0`–`9`, `=`, `-`, `,`. Examples: `cmd+t`, `cmd+opt+c`, `escape`. Exit 64 for a key not in the table; add it to `keyCodes` in `makoctl.swift`. |
+| `makoctl <pid> key <combo>` | Presses a key. Modifiers `cmd`, `shift`, `opt` joined with `+`. Keys: `return`, `escape`, `tab`, `a`, `c`, `t`, `v`, `w`, `x`, `l`, `r`, `z`, `[`, `]`, `0`–`9`, `=`, `-`, `,`. Examples: `cmd+t`, `cmd+opt+c`, `escape`. Exit 64 for a key not in the table; add it to `keyCodes` in `makoctl.swift`. |
 | `makoctl <pid> type <text>` | Types text into whatever has focus: the omnibox after `key cmd+l`, a web form field, the developer console. Any Unicode text works. |
 | `makoctl <pid> menu <Menu> <Item>` | Presses a menu item by its exact titles, e.g. `menu File "New Tab"`, `menu Tabs "Example Domain"`, `menu View "Developer Console"`. Does not open the menu (an open menu would swallow later keys). |
 | `makoctl <pid> press <name>` | Presses the first control whose title, description, or value equals `name`: web page buttons and links (`press "Continue with Google"`), as well as native controls. |

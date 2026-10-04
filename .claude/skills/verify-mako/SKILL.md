@@ -47,7 +47,7 @@ Full command reference, exit codes, AX handles, and recipes: `docs/control.md`. 
 | `title` / `wait-title <substr> [s]` | window AX title: page label + ` – i/n` (macOS joins `window.title` and `window.subtitle` in the AX title; verified live) |
 | `value <id>` / `exists <id>` | read an element by AX identifier |
 | `menu <Menu> <Item>` / `menu-items <Menu>` | press or list menu items via AX |
-| `key <combo>` | `return`, `escape`, `cmd+opt+c`, `cmd+t`, `cmd+w`, `cmd+l`, `cmd+1`…`cmd+9`, `cmd+z`, `cmd+[`, `cmd+]`, `cmd+r` |
+| `key <combo>` | `return`, `escape`, `cmd+a`, `cmd+c`, `cmd+v`, `cmd+x`, `cmd+opt+c`, `cmd+t`, `cmd+w`, `cmd+l`, `cmd+1`…`cmd+9`, `cmd+z`, `cmd+[`, `cmd+]`, `cmd+r` |
 | `type <text>` | types into the focused element |
 | `time-key <combo> <substr>` | ms from key press to the title containing substr (perf timing) |
 | `shot <path>` | window screenshot (works even when another app is in front) |

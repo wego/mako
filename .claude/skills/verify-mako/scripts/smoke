@@ -149,6 +149,16 @@ MAKO_RUN="$other" $C stop >/dev/null; rm -rf "$other"
 check iso-daily-untouched test "$daily_before" = "$(daily_stamp)"
 kill "$srv" 2>/dev/null; wait "$srv" 2>/dev/null
 
+echo "== edit"
+go "data:text/html,<title>copytest</title><p>mako copy check 42</p>"; $M "$P" wait-title "copytest" 8 >/dev/null
+printf 'stale' | pbcopy
+$M "$P" key escape; $M "$P" key cmd+a; $M "$P" key cmd+c; s 1
+check edit-copy-survives kill -0 "$P"
+check edit-copy-to-clipboard sh -c "pbpaste | grep -q 'mako copy check 42'"
+$M "$P" key cmd+l; $M "$P" type "omnibox copy 7"; $M "$P" key cmd+a; $M "$P" key cmd+c; s 0.5
+check edit-omnibox-copy sh -c "pbpaste | grep -qx 'omnibox copy 7'"
+$M "$P" key escape
+
 echo "== page shortcuts"
 probe="data:text/html,<title>probe</title><script>addEventListener('keydown',e=>{if(e.metaKey){e.preventDefault();document.title='got '+e.key}})</script><body contenteditable>edit</body>"
 launch "" "$probe"

@@ -70,7 +70,7 @@ func menuItem(_ app: AXUIElement, _ menu: String, _ item: String) -> AXUIElement
 }
 
 let keyCodes: [String: CGKeyCode] = [
-    "return": 36, "escape": 53, "tab": 48, "t": 17, "w": 13, "l": 37, "r": 15, "z": 6, "c": 8, "[": 33, "]": 30,
+    "return": 36, "escape": 53, "tab": 48, "t": 17, "w": 13, "l": 37, "r": 15, "z": 6, "c": 8, "a": 0, "v": 9, "x": 7, "[": 33, "]": 30,
     "1": 18, "2": 19, "3": 20, "4": 21, "5": 23, "6": 22, "7": 26, "8": 28, "9": 25, "=": 24, "-": 27, "0": 29, ",": 43,
 ]
 

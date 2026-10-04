@@ -57,10 +57,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 item("Undo", Selector(("undo:")), "z"),
                 item("Redo", Selector(("redo:")), "z", [.command, .shift]),
                 .separator(),
-                item("Cut", #selector(NSText.cut), "x"),
-                item("Copy", #selector(NSText.copy), "c"),
-                item("Paste", #selector(NSText.paste), "v"),
-                item("Select All", #selector(NSText.selectAll), "a"),
+                // Spelled out: #selector(NSText.copy) resolves to NSObject's -copy, which crashed.
+                item("Cut", #selector(NSText.cut(_:)), "x"),
+                item("Copy", #selector(NSText.copy(_:)), "c"),
+                item("Paste", #selector(NSText.paste(_:)), "v"),
+                item("Select All", #selector(NSText.selectAll(_:)), "a"),
             ]),
             menu("View", [
                 item("Reload", #selector(Browser.reload), "r"),
