@@ -11,12 +11,12 @@ All commands run from the repo root. `C=.claude/skills/verify-mako/scripts/contr
 
 ## Requirements
 
-The terminal running the agent needs macOS Accessibility and Screen Recording permission (System Settings → Privacy & Security). `doctor` fails loudly when either is missing. Rust (`cargo`) and Swift toolchains must be installed.
+The terminal running the agent needs macOS Accessibility and Screen Recording permission (System Settings → Privacy & Security). `doctor` fails loudly when either is missing. While the screen is locked, macOS degrades AX for every client: each app reports itself as its own window. `doctor` then prints `accessibility degraded: the screen is locked`; ask the user to unlock and retry. If it prints the same failure with the screen unlocked, the grant itself went stale; only the user can fix that, by toggling the terminal off and on in Accessibility and restarting it. Stop and ask either way; do not retry in a loop. Rust (`cargo`) and Swift toolchains must be installed.
 
 ## Launch
 
 ```sh
-$C build                        # script/bundle + compiles makoctl into verify-runs/.bin/
+$C build                        # script/bundle (Rust release lib + Swift app) + compiles makoctl
 $C launch                       # default disposable config: max_tabs = 3, block x.com
 $C launch "" https://example.com             # default config, start URL
 $C launch path/to/config https://example.com   # custom config and start URLs
@@ -24,6 +24,8 @@ P=$($C pid); M=verify-runs/.bin/makoctl
 ```
 
 Ready when `launch` prints `pid <n> ready`. Launch goes through LaunchServices (`open -n --env`); a bare exec of the binary receives no key events. The instance uses `MAKO_CONFIG=verify-runs/latest/state/config`, so the user's `~/.config/mako/config` is never read or written. Set `MAKO_RUN=verify-runs/<name>` to keep evidence from separate runs apart. Only one instance per `MAKO_RUN`; `launch` refuses a second.
+
+`launch` always starts from fresh state: default config, no `session.json`, so nothing is restored. `$C quit` (graceful ⌘Q, keeps state) and `$C relaunch [url...]` (start again on the same state) exercise session restore.
 
 ## Doctor
 
@@ -40,7 +42,7 @@ Prints `OK pid … build <mtime> title "…"` only when the PID is alive, is thi
 | Command | Use |
 | --- | --- |
 | `tree [depth] [--menus]` | AX tree snapshot; the primary evidence of UI state |
-| `title` / `wait-title <substr> [s]` | window title (page title + ` – i/n` tab position) |
+| `title` / `wait-title <substr> [s]` | window AX title: page label + ` – i/n` (macOS joins `window.title` and `window.subtitle` in the AX title; verified live) |
 | `value <id>` / `exists <id>` | read an element by AX identifier |
 | `menu <Menu> <Item>` / `menu-items <Menu>` | press or list menu items via AX |
 | `key <combo>` | `return`, `escape`, `cmd+opt+c`, `cmd+t`, `cmd+w`, `cmd+l`, `cmd+1`…`cmd+9`, `cmd+z`, `cmd+[`, `cmd+]`, `cmd+r` |
@@ -68,6 +70,14 @@ $C stop
 ```
 
 Kills only the PID this run launched and removes `$MAKO_RUN/state`. Evidence in `$MAKO_RUN/evidence/` survives. Run `stop` after every failed attempt too.
+
+## Full pass
+
+```sh
+.claude/skills/verify-mako/scripts/smoke
+```
+
+Builds, then runs every `features/*.md` recipe against fresh instances: one `PASS`/`FAIL` line per check, exit status = failure count, evidence in `verify-runs/latest/evidence/`. It takes focus for about 2 minutes. Run it before claiming any Mako change works; drive a single recipe by hand when debugging one failure.
 
 ## Feature map
 

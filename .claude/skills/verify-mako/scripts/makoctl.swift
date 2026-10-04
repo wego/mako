@@ -99,7 +99,19 @@ guard AXIsProcessTrusted() else { fail("accessibility permission missing for thi
 guard NSRunningApplication(processIdentifier: pid) != nil else { fail("pid \(pid) not running", 3) }
 let app = AXUIElementCreateApplication(pid)
 func mainWindow() -> AXUIElement {
-    (attr(app, kAXWindowsAttribute) as? [AXUIElement])?.first ?? { fail("no window") }()
+    guard let window = (attr(app, kAXWindowsAttribute) as? [AXUIElement])?.first(where: { str($0, kAXSubroleAttribute) == kAXStandardWindowSubrole })
+    else {
+        // macOS sometimes degrades AX for this terminal: every app reports itself as its own window.
+        // Re-toggling the terminal's Accessibility permission and restarting it fixes that.
+        if (attr(app, kAXWindowsAttribute) as? [AXUIElement])?.first.map({ CFEqual($0, app) }) == true {
+            let locked = (CGSessionCopyCurrentDictionary() as? [String: Any])?["CGSSessionScreenIsLocked"] as? Bool ?? false
+            fail(locked
+                ? "accessibility degraded: the screen is locked; unlock it and retry"
+                : "accessibility degraded system-wide (window == app) with the screen unlocked; re-toggle the terminal in Privacy & Security → Accessibility and restart it", 8)
+        }
+        fail("no standard window")
+    }
+    return window
 }
 
 // A background app has no key window, so keys and nil-targeted menu actions go nowhere.

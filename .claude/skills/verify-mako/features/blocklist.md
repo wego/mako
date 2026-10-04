@@ -1,6 +1,6 @@
 # Blocklist
 
-Hosts in the config's `block` lines (with optional time windows) never load. Mako shows a "Not now." page instead. The check runs on every navigation: typed URLs, link clicks, redirects, and URLs passed at launch. Config edits apply on the next navigation.
+Pages from hosts in the config's `block` lines (with optional time windows) do not load; Mako shows a "Not now." page instead. The check runs on every main-frame navigation: typed URLs, link clicks, redirects, restored tabs, and URLs passed at launch. A blocked host embedded in an iframe on another site still loads. Config edits apply on the next navigation.
 
 ## Sub-features
 
@@ -29,3 +29,4 @@ Preconditions: baseline (`block x.com`). Start `log stream --level info --predic
 
 - Block reasons with time windows say `until HH:MM` or `until midnight`; assert on `is blocked`.
 - `log stream` must start before the action or the lines are missed.
+- Each block page itself logs an extra `allow about:blank`; assert on the order of the `block`/`allow https` lines, not the full log.

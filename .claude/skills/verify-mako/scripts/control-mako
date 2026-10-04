@@ -1,11 +1,12 @@
 #!/bin/sh
 # Launches and tears down an isolated Mako for verification. State per run lives
-# in $MAKO_RUN (default: ./verify-runs/<timestamp>); evidence goes to $MAKO_RUN/evidence.
+# in $MAKO_RUN (default: ./verify-runs/latest); evidence goes to $MAKO_RUN/evidence.
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 repo=$(cd "$here/../../../.." && pwd)
 run=${MAKO_RUN:-$repo/verify-runs/latest}
 bin="$repo/verify-runs/.bin/makoctl"
+exe="$repo/build/Mako.app/Contents/MacOS/Mako"
 
 makoctl_build() {
   mkdir -p "$(dirname "$bin")"
@@ -14,23 +15,13 @@ makoctl_build() {
   fi
 }
 
-case "${1:-}" in
-build)
-  "$repo/script/bundle" >/dev/null
-  makoctl_build
-  echo "built $repo/build/Mako.app and $bin"
-  ;;
-launch)
-  # launch [config-file|""] [url...]: starts build/Mako.app with a disposable config.
-  shift
+refuse_if_running() {
   [ -f "$run/pid" ] && kill -0 "$(cat "$run/pid")" 2>/dev/null && { echo "already running: pid $(cat "$run/pid")"; exit 1; }
-  rm -rf "$run/state"; mkdir -p "$run/state" "$run/evidence"
-  printf 'max_tabs = 3\nblock x.com\n' > "$run/state/config"
-  if [ $# -gt 0 ]; then
-    if [ -f "$1" ]; then cp "$1" "$run/state/config"; elif [ -n "$1" ]; then echo "no config file $1 (pass \"\" for the default)"; exit 64; fi
-    shift
-  fi
-  exe="$repo/build/Mako.app/Contents/MacOS/Mako"
+  return 0
+}
+
+# start [url...]: opens build/Mako.app on the existing $run/state (config, session.json).
+start() {
   before=$(pgrep -f "$exe" || true)
   # LaunchServices launch (-n: separate instance); a bare exec gets no key events.
   open -n -a "$repo/build/Mako.app" --env MAKO_CONFIG="$run/state/config" --args "$@"
@@ -41,11 +32,49 @@ launch)
   done
   echo "$pid" > "$run/pid"
   i=0
-  until "$bin" "$(cat "$run/pid")" title >/dev/null 2>&1; do
-    i=$((i + 1)); [ $i -gt 50 ] && { echo "window never appeared"; exit 1; }
+  until "$bin" "$pid" title >/dev/null 2>&1; do
+    i=$((i + 1)); [ $i -gt 50 ] && { echo "window never appeared: $("$bin" "$pid" title 2>&1)"; exit 1; }
     sleep 0.2
   done
-  echo "pid $(cat "$run/pid") ready; config $run/state/config; evidence $run/evidence"
+  echo "pid $pid ready; config $run/state/config; evidence $run/evidence"
+}
+
+case "${1:-}" in
+build)
+  "$repo/script/bundle" >/dev/null
+  makoctl_build
+  echo "built $repo/build/Mako.app and $bin"
+  ;;
+launch)
+  # launch [config-file|""] [url...]: fresh state (default config, no session), then start.
+  shift
+  refuse_if_running
+  rm -rf "$run/state"; mkdir -p "$run/state" "$run/evidence"
+  printf 'max_tabs = 3\nblock x.com\n' > "$run/state/config"
+  if [ $# -gt 0 ]; then
+    if [ -f "$1" ]; then cp "$1" "$run/state/config"; elif [ -n "$1" ]; then echo "no config file $1 (pass \"\" for the default)"; exit 64; fi
+    shift
+  fi
+  start "$@"
+  ;;
+relaunch)
+  # relaunch [url...]: start again on the state the last instance left (session restore).
+  shift
+  refuse_if_running
+  [ -f "$run/state/config" ] || { echo "no state in $run; use launch"; exit 1; }
+  start "$@"
+  ;;
+quit)
+  # Graceful Cmd-Q via the menu so applicationWillTerminate runs; keeps state.
+  pid=$(cat "$run/pid")
+  "$bin" "$pid" menu Mako "Quit Mako"
+  i=0
+  while kill -0 "$pid" 2>/dev/null; do
+    i=$((i + 1)); [ $i -gt 50 ] && { echo "pid $pid did not quit"; exit 1; }
+    sleep 0.2
+  done
+  rm -f "$run/pid"
+  echo "quit pid $pid; state kept in $run/state"
   ;;
 pid)
   cat "$run/pid"
@@ -55,11 +84,11 @@ doctor)
   [ -f "$run/pid" ] || { echo "FAIL no launched instance in $run"; exit 1; }
   pid=$(cat "$run/pid")
   kill -0 "$pid" 2>/dev/null || { echo "FAIL pid $pid not running"; exit 1; }
-  exe=$(ps -o comm= -p "$pid")
-  case "$exe" in "$repo/build/Mako.app/Contents/MacOS/Mako") ;; *) echo "FAIL pid $pid is $exe, not this checkout's build"; exit 1 ;; esac
-  "$bin" "$pid" title >/dev/null || { echo "FAIL accessibility unavailable"; exit 1; }
+  comm=$(ps -o comm= -p "$pid")
+  [ "$comm" = "$exe" ] || { echo "FAIL pid $pid is $comm, not this checkout's build"; exit 1; }
+  ax=$("$bin" "$pid" title 2>&1) || { echo "FAIL accessibility: $ax"; exit 1; }
   "$bin" "$pid" shot "$run/state/doctor.png" >/dev/null || { echo "FAIL screen recording unavailable"; exit 1; }
-  echo "OK pid $pid build $(stat -f %Sm "$repo/build/Mako.app/Contents/MacOS/Mako") title \"$("$bin" "$pid" title)\""
+  echo "OK pid $pid build $(stat -f %Sm "$exe") title \"$("$bin" "$pid" title)\""
   ;;
 stop)
   if [ -f "$run/pid" ]; then
@@ -71,7 +100,7 @@ stop)
   rm -rf "$run/state"
   ;;
 *)
-  echo "usage: control-mako build | launch [config-file|\"\"] [url...] | pid | doctor | stop"
+  echo "usage: control-mako build | launch [config-file|\"\"] [url...] | quit | relaunch [url...] | pid | doctor | stop"
   echo "drive: $bin <pid> <command>   (run $bin with no args for commands)"
   exit 64
   ;;

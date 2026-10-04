@@ -26,4 +26,5 @@ Preconditions: baseline launched with `https://example.com`.
 ## Gotchas
 
 - Right after the first open, WebKit briefly adds a small `AXDialog` window and can leave a stray button on screen for a few seconds after closing. Wait ~4 s before asserting the closed state.
+- Docked position, Inspect Element in the context menu, and console focus are WebKit defaults. If someone detaches the inspector, WebKit remembers that and later opens show a separate window, so check `tree 1` for a second `AXWindow` as well as a second `AXWebArea`.
 - The inspector uses private WebKit API (`_inspector`) plus the `developerExtrasEnabled` preference; a WebKit update that removes either makes ⌥⌘C beep. This recipe catches that.

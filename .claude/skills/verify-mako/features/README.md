@@ -5,7 +5,7 @@ One recipe per user-facing feature. Read this index, then drive the matching fil
 ## Baseline preconditions
 
 - `control-mako build` ran against the current checkout.
-- `control-mako launch` started a fresh instance with the default disposable config (`max_tabs = 3`, `block x.com`) unless a recipe says otherwise.
+- `control-mako launch` started a fresh instance with the default disposable config (`max_tabs = 3`, `block x.com`) unless a recipe says otherwise. Fresh means no saved session, so only the launch URL is open.
 - `control-mako doctor` prints `OK`.
 - `P=$(control-mako pid)` and `M=verify-runs/.bin/makoctl` are set.
 - Network access to `example.com` and `www.google.com`.
@@ -34,3 +34,5 @@ Each file: H1 title, one paragraph of user-visible behavior, then `Sub-features`
 - [Accessibility tree](./accessibility.md) covers the handles agents rely on.
 - [Page shortcuts](./page-shortcuts.md) covers which ⌘ keys reach web pages.
 - [Developer console](./devtools.md) covers opening, using, and closing the Web Inspector.
+- [Session restore](./session.md) covers saving at quit, restoring at launch, and turning it off.
+- [Navigation and zoom](./navigation.md) covers back, forward, reload, and zoom.

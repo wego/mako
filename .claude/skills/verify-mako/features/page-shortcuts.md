@@ -1,6 +1,6 @@
 # Page shortcuts
 
-Mako's own shortcuts (⌘T ⌘W ⌘L ⌘, ⌘1–9) always reach Mako, even when a page has focus. Every other ⌘ key (⌘Z, ⌘C, ⌘V, ⌘R, ⌘[, ⌘]) goes to the web page first, so web apps such as Google Docs keep their own undo.
+Mako's own shortcuts (⌘T ⌘W ⌘L ⌘, ⌘1–9 ⌥⌘C) always reach Mako, even when a page has focus. The match is exact: ⌘⇧T or ⌘⇧1 go to the page first. Every other ⌘ key (⌘Z, ⌘C, ⌘V, ⌘R, ⌘[, ⌘]) goes to the web page first, so web apps such as Google Docs keep their own undo.
 
 ## Sub-features
 

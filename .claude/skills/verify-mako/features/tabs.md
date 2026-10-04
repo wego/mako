@@ -5,7 +5,7 @@ Mako has no tab bar. Tabs are capped (`max_tabs`, default 3), switched with ⌘1
 ## Sub-features
 
 - `tab-new` ⌘T opens a blank tab with the omnibox.
-- `tab-cap` ⌘T at the cap beeps and shows "Tab cap reached (3)…" without adding a tab.
+- `tab-cap` ⌘T at the cap beeps and shows "Tab cap reached (3)…" without adding a tab. A link opened from another app at the cap instead prefills the omnibox with "Tab cap reached. Enter replaces this tab, Esc ignores." (no beep).
 - `tab-switch` ⌘<n> and Tabs menu items switch tabs; the menu checks the active tab.
 - `tab-close` ⌘W closes; closing the last tab leaves one fresh blank tab.
 - `tab-title` window title tracks the active tab's title, falling back to host, then `New Tab`.
