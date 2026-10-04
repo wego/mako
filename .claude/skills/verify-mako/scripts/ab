@@ -45,7 +45,7 @@ rows = [l.split() for l in open(sys.argv[1])]
 data = defaultdict(lambda: defaultdict(list))
 for label, metric, us in rows:
     data[metric][label].append(int(us) / 1000)
-for metric in ("launchToFirstPage", "newTab", "selectTab"):
+for metric in ("launchToInteractive", "launchToFirstPage", "newTab", "selectTab"):
     b, c = data[metric]["base"], data[metric]["cand"]
     if not b or not c:
         print(f"{metric:18} missing samples (base {len(b)}, cand {len(c)})"); continue

@@ -20,17 +20,32 @@ let log = Logger(subsystem: "com.wego.mako", category: "browser")
         CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes)
     }
 
-    /// Process start to the first page finishing its load.
+    /// Process start to the first page finishing its load. Includes WebKit's own process
+    /// start-up, which varies by ~100ms run to run.
     static func firstPage() {
         guard enabled, !firstPageLogged else { return }
         firstPageLogged = true
+        log.info("perf launchToFirstPage \(sinceProcessStart())us")
+    }
+
+    /// Process start until the main thread first idles after launching: the part of launch
+    /// Mako controls, and when the window starts taking input.
+    static func interactiveAfterLaunch() {
+        guard enabled else { return }
+        let observer = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.beforeWaiting.rawValue, false, 0) { o, _ in
+            log.info("perf launchToInteractive \(sinceProcessStart())us")
+            CFRunLoopRemoveObserver(CFRunLoopGetMain(), o, .commonModes)
+        }
+        CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes)
+    }
+
+    private static func sinceProcessStart() -> Int {
         var info = kinfo_proc()
         var size = MemoryLayout<kinfo_proc>.size
         var mib = [CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid()]
-        guard sysctl(&mib, 4, &info, &size, nil, 0) == 0 else { return }
+        guard sysctl(&mib, 4, &info, &size, nil, 0) == 0 else { return 0 }
         let started = info.kp_proc.p_un.__p_starttime
-        let ms = (Date().timeIntervalSince1970 - (Double(started.tv_sec) + Double(started.tv_usec) / 1e6)) * 1000
-        log.info("perf launchToFirstPage \(Int(ms * 1000))us")
+        return Int((Date().timeIntervalSince1970 - (Double(started.tv_sec) + Double(started.tv_usec) / 1e6)) * 1_000_000)
     }
 }
 

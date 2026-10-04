@@ -19,7 +19,8 @@ E=${MAKO_RUN:-verify-runs/latest}/evidence
 N=${PERF_N:-8}
 fails=0
 
-APP_LAUNCH_MS=450     # in-app: process start to first page loaded
+APP_INTERACTIVE_MS=330 # in-app: process start to main thread idle after launch
+APP_LAUNCH_MS=450     # in-app: process start to first page loaded (includes WebKit start-up)
 APP_NEW_TAB_MS=35     # in-app: cmd+T event until main thread idle
 APP_SWITCH_MS=15      # in-app: cmd+1 event until main thread idle
 E2E_LAUNCH_MS=900     # backstop: launch command to title visible via AX
@@ -80,6 +81,7 @@ sleep 1
 kill "$logpid" 2>/dev/null; wait "$logpid" 2>/dev/null; logpid=
 
 app_ms() { grep -oE "perf $1 [0-9]+us" "$applog" | grep -oE '[0-9]+us' | tr -d us | median | awk '{printf "%.1f", $1 / 1000}'; }
+app_interactive=$(app_ms launchToInteractive)
 app_launch=$(app_ms launchToFirstPage)
 app_new_tab=$(app_ms newTab)
 app_switch=$(app_ms selectTab)
@@ -88,6 +90,7 @@ e2e_new_tab=$(printf '%s\n' "${news[@]}" | median)
 e2e_switch=$(printf '%s\n' "${switches[@]}" | median)
 bundle=$(( ($(du -sk build/Mako.app | cut -f1) + 1023) / 1024 ))
 
+budget app-launch-to-interactive "$app_interactive" $APP_INTERACTIVE_MS ms
 budget app-launch-to-first-page "$app_launch" $APP_LAUNCH_MS ms
 budget app-new-tab "$app_new_tab" $APP_NEW_TAB_MS ms
 budget app-tab-switch "$app_switch" $APP_SWITCH_MS ms
@@ -102,7 +105,7 @@ else
   echo "FAIL core: $(echo "$out" | grep -o 'parse+check took .*' | head -1)"; fails=$((fails + 1))
 fi
 
-printf 'n=%s app_launch=%s app_new_tab=%s app_switch=%s e2e_launch=%s e2e_new_tab=%s e2e_switch=%s rss_mb=%s bundle_mb=%s\n' \
-  "$N" "$app_launch" "$app_new_tab" "$app_switch" "$e2e_launch" "$e2e_new_tab" "$e2e_switch" "$rss" "$bundle" >>"$E/perf.log"
+printf 'n=%s app_interactive=%s app_launch=%s app_new_tab=%s app_switch=%s e2e_launch=%s e2e_new_tab=%s e2e_switch=%s rss_mb=%s bundle_mb=%s\n' \
+  "$N" "$app_interactive" "$app_launch" "$app_new_tab" "$app_switch" "$e2e_launch" "$e2e_new_tab" "$e2e_switch" "$rss" "$bundle" >>"$E/perf.log"
 echo "== $fails budget(s) missed; history in $E/perf.log"
 exit "$fails"

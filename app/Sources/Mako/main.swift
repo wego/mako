@@ -12,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         CommandLine.arguments.dropFirst().compactMap(URL.init(string:)).filter { $0.scheme != nil }.forEach(browser.open)
         pending.forEach(browser.open)
         NSApp.activate()
+        Perf.interactiveAfterLaunch()
     }
 
     func application(_: NSApplication, open urls: [URL]) {
