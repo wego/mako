@@ -30,7 +30,19 @@ cat > "$app/Info.plist" <<PLIST
   </dict></array>
 </dict></plist>
 PLIST
-# SIGN_IDENTITY: a stable cert keeps macOS permissions across rebuilds; default ad-hoc.
+# SIGN_IDENTITY: a stable cert keeps macOS permissions across rebuilds. Unset, it is
+# the Apple Development identity for Wego's team, the team that owns com.wego.mako
+# (the first identity in the keychain can belong to another team); with none, as in
+# CI, the app is signed ad hoc. Set SIGN_IDENTITY=- to force ad hoc.
+team=H38F4QZT8M
+team_identity() {
+  for hash in $(security find-identity -v -p codesigning | awk '/Apple Development/ {print $2}'); do
+    security find-certificate -a -Z -p 2>/dev/null |
+      awk -v h="$hash" '/^SHA-1 hash:/ {on = ($3 == h)} on && /BEGIN CERT/ {p = 1} p {print} p && /END CERT/ {exit}' |
+      openssl x509 -noout -subject 2>/dev/null | grep -q "OU *= *$1" && { echo "$hash"; return; }
+  done
+}
+[ -n "${SIGN_IDENTITY+set}" ] || SIGN_IDENTITY=$(team_identity "$team")
 # PROVISIONING_PROFILE: a macOS profile granting Apple's browser passkey entitlement
 # (com.apple.developer.web-browser.public-key-credential) for com.wego.mako.
 # macOS kills a binary that claims the entitlement without such a profile, so it is

@@ -44,4 +44,4 @@ jobs:
             --title "Mako $MAKO_VERSION" \
             --notes "Built from $SHA by CI.
 
-          The app is ad hoc signed, not notarized: on first launch, right-click Mako.app and choose Open."
+          Ad hoc signed, not notarized: on first open, right-click Mako.app › Open (or run \`xattr -dr com.apple.quarantine /Applications/Mako.app\`)."
