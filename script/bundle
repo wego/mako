@@ -1,5 +1,6 @@
 #!/bin/sh
 # Builds the Rust core + Swift shell (release) and assembles build/Mako.app.
+# MAKO_VERSION / MAKO_BUILD set the app version (CI release uses 0.1.<run> and <run>).
 # Install: SIGN_IDENTITY="Apple Development: ..." script/bundle && ditto build/Mako.app /Applications/Mako.app
 set -eu
 cd "$(dirname "$0")/.."
@@ -19,8 +20,8 @@ cat > "$app/Info.plist" <<PLIST
   <key>CFBundleExecutable</key><string>Mako</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>0.1.0</string>
-  <key>CFBundleVersion</key><string>1</string>
+  <key>CFBundleShortVersionString</key><string>${MAKO_VERSION:-0.1.0}</string>
+  <key>CFBundleVersion</key><string>${MAKO_BUILD:-1}</string>
   <key>LSMinimumSystemVersion</key><string>26.0</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>CFBundleURLTypes</key><array><dict>

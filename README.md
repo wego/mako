@@ -27,6 +27,12 @@ Links that try to open a new window load in the current tab. Mako's own shortcut
 
 `script/icon design/icon-variants/<variant>.png` regenerates `app/Resources/AppIcon.icns`. Six variants were generated with `gpt-image-2.5-sunburst`.
 
+## Releases
+
+CI (`.github/workflows/ci.yml`) runs the Rust tests, the core performance budget, the app build, DMG packaging, and `doc-check` on every pull request and push. When CI passes on `main`, `.github/workflows/release.yml` builds `Mako-0.1.<run>.dmg` and publishes it as a GitHub Release. Release builds are ad hoc signed and not notarized: on first launch, right-click Mako.app and choose Open. The UI checks (`verify-mako` smoke, perf) need a Mac with Accessibility and Screen Recording permission, so they run locally, not in CI.
+
+    script/bundle && script/dmg      # local DMG: build/Mako-<version>.dmg
+
 ## Passkeys
 
 WebKit only runs passkey (WebAuthn) requests in apps that hold Apple's restricted `com.apple.developer.web-browser.public-key-credential` entitlement; without it every site's passkey prompt fails with `NotAllowedError`, and signing with the entitlement but no profile makes macOS kill the app at launch. To enable passkeys:

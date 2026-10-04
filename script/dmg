@@ -1,0 +1,15 @@
+#!/bin/sh
+# Packages build/Mako.app into build/Mako-<version>.dmg with an Applications link.
+# Usage: script/dmg   (run script/bundle first; prints the DMG path)
+set -eu
+cd "$(dirname "$0")/.."
+[ -d build/Mako.app ] || { echo "build/Mako.app missing; run script/bundle first" >&2; exit 1; }
+version=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" build/Mako.app/Contents/Info.plist)
+stage=$(mktemp -d)
+trap 'rm -rf "$stage"' EXIT
+cp -R build/Mako.app "$stage/"
+ln -s /Applications "$stage/Applications"
+out="build/Mako-$version.dmg"
+rm -f "$out"
+hdiutil create -volname "Mako $version" -srcfolder "$stage" -fs HFS+ -format UDZO -ov "$out" >/dev/null
+echo "$out"

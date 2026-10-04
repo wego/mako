@@ -1,0 +1,47 @@
+name: Release
+
+# Ships only commits on main that passed CI.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  dmg:
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
+    runs-on: macos-26
+    env:
+      MAKO_VERSION: 0.1.${{ github.run_number }}
+      MAKO_BUILD: ${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Build and bundle the app
+        run: script/bundle
+
+      - name: Package the DMG
+        id: dmg
+        run: echo "path=$(script/dmg)" >> "$GITHUB_OUTPUT"
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+          DMG: ${{ steps.dmg.outputs.path }}
+        run: |
+          gh release create "v$MAKO_VERSION" "$DMG" \
+            --target "$SHA" \
+            --title "Mako $MAKO_VERSION" \
+            --notes "Built from $SHA by CI.
+
+          The app is ad hoc signed, not notarized: on first launch, right-click Mako.app and choose Open."
