@@ -344,6 +344,8 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
     }
 
     @objc func closeTab(_: Any?) {
+        // ⌘W in the About panel or a sign-in popup closes that window, not a tab behind it.
+        if let key = NSApp.keyWindow, key !== window { return key.performClose(nil) }
         Perf.measure("closeTab")
         let closing = tabs.remove(at: active)
         closing.removeFromSuperview()

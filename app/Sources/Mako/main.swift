@@ -43,6 +43,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         tabs.submenu = browser.tabsMenu
         [
             menu("Mako", [
+                item("About Mako", #selector(NSApplication.orderFrontStandardAboutPanel(_:)), ""),
+                .separator(),
                 item("Settings…", #selector(Browser.openConfig), ","),
                 .separator(),
                 item("Hide Mako", #selector(NSApplication.hide), "h"),

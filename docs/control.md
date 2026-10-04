@@ -117,7 +117,7 @@ Stable identifiers Mako sets for automation. Prefer these, menu titles, and the 
 | `mako.blank` | The app icon shown on a blank tab. |
 | `mako.popup` | A sign-in popup window. |
 
-Menu bar: `File` (New Tab, Open Location…, Close Tab), `Edit`, `View` (Reload, Zoom In/Out, Actual Size, Developer Console), `History` (Back, Forward), `Tabs` (one item per open tab).
+Menu bar: `Mako` (About Mako, Settings…, Hide, Quit), `File` (New Tab, Open Location…, Close Tab), `Edit`, `View` (Reload, Zoom In/Out, Actual Size, Developer Console), `History` (Back, Forward), `Tabs` (one item per open tab).
 
 ## Recipes
 

@@ -149,6 +149,14 @@ MAKO_RUN="$other" $C stop >/dev/null; rm -rf "$other"
 check iso-daily-untouched test "$daily_before" = "$(daily_stamp)"
 kill "$srv" 2>/dev/null; wait "$srv" 2>/dev/null
 
+echo "== about"
+version=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" build/Mako.app/Contents/Info.plist)
+$M "$P" menu Mako "About Mako" >/dev/null 2>&1; s 1
+$M "$P" tree 6 >"$E/about.txt"
+check about-panel-opens test "$($M "$P" windows | grep -c AXWindow)" -ge 2
+check about-shows-version grep -q "Version $version" "$E/about.txt"
+$M "$P" key "cmd+w"; s 0.5
+
 echo "== edit"
 go "data:text/html,<title>copytest</title><p>mako copy check 42</p>"; $M "$P" wait-title "copytest" 8 >/dev/null
 printf 'stale' | pbcopy
