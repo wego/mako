@@ -47,6 +47,7 @@ Prints `OK pid … build <mtime> title "…"` only when the PID is alive, is thi
 | `menu <Menu> <Item>` / `menu-items <Menu>` | press or list menu items via AX |
 | `key <combo>` | `return`, `escape`, `cmd+opt+c`, `cmd+t`, `cmd+w`, `cmd+l`, `cmd+1`…`cmd+9`, `cmd+z`, `cmd+[`, `cmd+]`, `cmd+r` |
 | `type <text>` | types into the focused element |
+| `time-key <combo> <substr>` | ms from key press to the title containing substr (perf timing) |
 | `shot <path>` | window screenshot (works even when another app is in front) |
 
 Stable AX handles: window title; `mako.page` (web container), `mako.omnibox` (address bar panel), `mako.omnibox.field` (its text field, value = typed text), `mako.omnibox.status` (tab list and messages), `mako.blank` (new-tab icon), `mako.tab.<n>` (each tab's web view, 1-based). The `Tabs` menu lists one item per open tab titled with the tab's label; the active one is checked.
@@ -77,7 +78,15 @@ Kills only the PID this run launched and removes `$MAKO_RUN/state`. Evidence in 
 .claude/skills/verify-mako/scripts/smoke
 ```
 
-Builds, then runs every `features/*.md` recipe against fresh instances: one `PASS`/`FAIL` line per check, exit status = failure count, evidence in `verify-runs/latest/evidence/`. It takes focus for about 2 minutes. Run it before claiming any Mako change works; drive a single recipe by hand when debugging one failure.
+Builds, then runs every `features/*.md` recipe against fresh instances, then `scripts/perf`: one `PASS`/`FAIL` line per check, exit status = failure count, evidence in `verify-runs/latest/evidence/`. It takes focus for about 2 minutes. Run it before claiming any Mako change works; drive a single recipe by hand when debugging one failure.
+
+## Performance budgets
+
+```sh
+.claude/skills/verify-mako/scripts/perf
+```
+
+Five fresh launches on local `data:` pages; checks median launch-to-first-page, ⌘T and ⌘1 latency (`makoctl time-key`, key press to title change in one process), memory with 3 tabs, bundle size, and the Rust core's per-navigation parse+check (`cargo test --release -- --ignored perf_budget`). Budgets live at the top of the script, about 1.5× measured medians; `perf.log` in the evidence dir keeps a line per run. A miss is a regression to fix, not a budget to raise; raise one only with a stated reason in the commit.
 
 ## Feature map
 

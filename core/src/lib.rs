@@ -248,4 +248,20 @@ mod tests {
         assert!(blocked(&c, "late.com", mon, 12 * 60).is_none());
         assert_eq!(blocked(&cfg("block a.com 20:00-24:00"), "a.com", mon, 21 * 60).unwrap(), "a.com is blocked until midnight.");
     }
+
+    /// The shell re-parses the config on every navigation, so parse + check is the hot path.
+    /// Run with `cargo test --release -- --ignored`; debug builds are too slow to time.
+    #[test]
+    #[ignore]
+    fn perf_budget_parse_and_check() {
+        let text: String = (0..500).map(|i| format!("block site{i}.example 09:00-18:00 weekdays\n")).collect();
+        let start = std::time::Instant::now();
+        for i in 0..1_000 {
+            let c = parse_config(&text).unwrap();
+            std::hint::black_box(blocked(&c, &format!("www.site{}.example", i % 600), 0, 600));
+        }
+        let per_call = start.elapsed() / 1_000;
+        assert!(per_call < std::time::Duration::from_micros(200), "parse+check took {per_call:?} per navigation (budget 200µs)");
+        println!("parse+check: {per_call:?} per navigation with 500 block rules");
+    }
 }

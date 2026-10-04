@@ -1,0 +1,77 @@
+#!/bin/bash
+# Performance budgets for Mako. Prints one PASS/FAIL line per budget with the
+# measured value; exit status is the number of budgets missed.
+# Uses local data: pages so network speed never moves the numbers.
+# Budgets are ~1.5x medians measured 2026-10-04 on an M-series Mac (launch 530ms,
+# new tab 120ms, switch 75ms, 120MB, 3MB, core 61us); a miss means something got
+# slower, not noise. Tighten them when things get faster. Key timings come from
+# makoctl time-key, which times key press to title change inside one process.
+set -u
+cd "$(dirname "$0")/../../../.."
+C=.claude/skills/verify-mako/scripts/control-mako
+M=verify-runs/.bin/makoctl
+E=${MAKO_RUN:-verify-runs/latest}/evidence
+fails=0
+
+LAUNCH_MS=800       # process start to first page rendered (title visible)
+NEW_TAB_MS=180      # cmd+T to the blank tab's title
+SWITCH_MS=120       # cmd+1 to the other tab's title
+RSS_MB=170          # app process resident memory with 3 tabs loaded
+BUNDLE_MB=5         # build/Mako.app on disk
+CORE_US=200         # enforced inside the Rust test itself
+
+now_ms() { python3 -c 'import time; print(int(time.time() * 1000))'; }
+median() { sort -n | awk '{a[NR]=$1} END {print a[int((NR + 1) / 2)]}'; }
+budget() {
+  local name=$1 value=$2 limit=$3 unit=$4
+  if [ "$value" -le "$limit" ]; then echo "PASS $name ${value}${unit} (budget ${limit}${unit})"
+  else echo "FAIL $name ${value}${unit} (budget ${limit}${unit})"; fails=$((fails + 1)); fi
+}
+trap '$C stop >/dev/null 2>&1' EXIT
+mkdir -p "$E"
+
+page() { echo "data:text/html,<title>$1</title><h1>$1</h1>"; }
+
+launches=() news=() switches=() rss=0
+for i in 1 2 3 4 5; do
+  $C stop >/dev/null 2>&1
+  t0=$(now_ms)
+  $C launch "" "$(page first)" >/dev/null || { echo "FAIL launch"; exit 99; }
+  P=$($C pid)
+  $M "$P" wait-title first 10 >/dev/null || { echo "FAIL first page never rendered"; exit 99; }
+  launches+=($(($(now_ms) - t0)))
+
+  news+=($($M "$P" time-key cmd+t "New Tab – 2/2"))
+  $M "$P" key escape
+
+  switches+=($($M "$P" time-key cmd+1 "first – 1/2"))
+
+  if [ "$i" = 5 ]; then
+    $M "$P" key cmd+2; $M "$P" key cmd+l; $M "$P" type "$(page second)"; $M "$P" key return; $M "$P" wait-title second 5 >/dev/null
+    $M "$P" key cmd+t; $M "$P" key cmd+l; $M "$P" type "$(page third)"; $M "$P" key return; $M "$P" wait-title third 5 >/dev/null
+    sleep 1
+    rss=$(($(ps -o rss= -p "$P") / 1024))
+  fi
+done
+$C stop >/dev/null 2>&1
+
+launch=$(printf '%s\n' "${launches[@]}" | median)
+new_tab=$(printf '%s\n' "${news[@]}" | median)
+switch=$(printf '%s\n' "${switches[@]}" | median)
+bundle=$(( ($(du -sk build/Mako.app | cut -f1) + 1023) / 1024 ))
+
+budget launch-to-first-page "$launch" $LAUNCH_MS ms
+budget new-tab "$new_tab" $NEW_TAB_MS ms
+budget tab-switch "$switch" $SWITCH_MS ms
+budget memory-3-tabs "$rss" $RSS_MB MB
+budget bundle-size "$bundle" $BUNDLE_MB MB
+if out=$(cargo test --release -q --manifest-path core/Cargo.toml -- --ignored --nocapture perf_budget 2>&1); then
+  echo "PASS core $(echo "$out" | grep -o 'parse+check: [^ ]*') per navigation (budget ${CORE_US}µs)"
+else
+  echo "FAIL core: $(echo "$out" | grep -o 'parse+check took .*' | head -1)"; fails=$((fails + 1))
+fi
+
+printf 'launch=%s new_tab=%s switch=%s rss_mb=%s bundle_mb=%s raw_launch=%s\n' \
+  "$launch" "$new_tab" "$switch" "$rss" "$bundle" "${launches[*]}" >>"$E/perf.log"
+echo "== $fails budget(s) missed; history in $E/perf.log"
+exit "$fails"

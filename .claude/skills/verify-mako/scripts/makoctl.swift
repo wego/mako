@@ -65,13 +65,13 @@ let keyCodes: [String: CGKeyCode] = [
     "1": 18, "2": 19, "3": 20, "4": 21, "5": 23, "6": 22, "7": 26, "8": 28, "9": 25, "=": 24, "-": 27, "0": 29, ",": 43,
 ]
 
-func post(_ pid: pid_t, key: CGKeyCode, flags: CGEventFlags = [], text: String? = nil) {
+func post(_ pid: pid_t, key: CGKeyCode, flags: CGEventFlags = [], text: String? = nil, settle: Bool = true) {
     for down in [true, false] {
         let ev = CGEvent(keyboardEventSource: nil, virtualKey: key, keyDown: down)!
         ev.flags = flags
         if let text { ev.keyboardSetUnicodeString(stringLength: text.utf16.count, unicodeString: Array(text.utf16)) }
         ev.postToPid(pid)
-        usleep(30_000)
+        if settle { usleep(30_000) }
     }
 }
 
@@ -90,6 +90,7 @@ let usage = """
     makoctl <pid> key <combo>              e.g. return, escape, cmd+t, cmd+1, cmd+z
     makoctl <pid> type <text>              type text into the focused element
     makoctl <pid> wait-title <substring> [seconds]
+    makoctl <pid> time-key <combo> <substring>   ms from key press until the title contains substring
     makoctl <pid> shot <path.png>          screenshot of the window
     """
 
@@ -124,7 +125,17 @@ func focus() {
     usleep(150_000)
 }
 
-if ["menu", "key", "type"].contains(args[1]) { focus() }
+if ["menu", "key", "type", "time-key"].contains(args[1]) { focus() }
+
+func postCombo(_ combo: String, settle: Bool = true) {
+    let parts = combo.lowercased().split(separator: "+").map(String.init)
+    guard let code = keyCodes[parts.last!] else { fail("unknown key \(parts.last!)", 64) }
+    var flags: CGEventFlags = []
+    if parts.contains("cmd") { flags.insert(.maskCommand) }
+    if parts.contains("shift") { flags.insert(.maskShift) }
+    if parts.contains("opt") { flags.insert(.maskAlternate) }
+    post(pid, key: code, flags: flags, settle: settle)
+}
 
 switch args[1] {
 case "tree":
@@ -143,13 +154,19 @@ case "menu-items":
     for i in children(submenu(app, args[2])) { if let t = str(i, kAXTitleAttribute) { print(line(i).contains("checked") ? "* \(t)" : "  \(t)") } }
 case "key":
     guard args.count > 2 else { fail(usage, 64) }
-    let parts = args[2].lowercased().split(separator: "+").map(String.init)
-    guard let code = keyCodes[parts.last!] else { fail("unknown key \(parts.last!)", 64) }
-    var flags: CGEventFlags = []
-    if parts.contains("cmd") { flags.insert(.maskCommand) }
-    if parts.contains("shift") { flags.insert(.maskShift) }
-    if parts.contains("opt") { flags.insert(.maskAlternate) }
-    post(pid, key: code, flags: flags)
+    postCombo(args[2])
+case "time-key":
+    guard args.count > 3 else { fail(usage, 64) }
+    let start = Date()
+    postCombo(args[2], settle: false)
+    while Date().timeIntervalSince(start) < 5 {
+        if (str(mainWindow(), kAXTitleAttribute) ?? "").contains(args[3]) {
+            print(Int(Date().timeIntervalSince(start) * 1000))
+            exit(0)
+        }
+        usleep(5_000)
+    }
+    fail("title never contained \"\(args[3])\" within 5s", 5)
 case "type":
     guard args.count > 2 else { fail(usage, 64) }
     for ch in args[2] { post(pid, key: 0, text: String(ch)) }
@@ -159,7 +176,7 @@ case "wait-title":
     while Date() < deadline {
         let t = str(mainWindow(), kAXTitleAttribute) ?? ""
         if t.contains(args[2]) { print(t); exit(0) }
-        usleep(200_000)
+        usleep(50_000)
     }
     fail("title never contained \"\(args[2])\"; last: \(str(mainWindow(), kAXTitleAttribute) ?? "")", 5)
 case "shot":
