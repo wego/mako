@@ -3,3 +3,4 @@ target/
 build/
 tmp/
 verify-runs/
+.DS_Store
