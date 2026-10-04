@@ -1,0 +1,15 @@
+#!/bin/bash
+# Fails if docs/control.md lacks any makoctl or control-mako command, so the
+# reference grows with the tools. Exit status is the number of missing commands.
+cd "$(dirname "$0")/../../../.."
+here=.claude/skills/verify-mako/scripts
+doc=docs/control.md
+missing=0
+for cmd in $(grep -oE '^case "[a-z-]+"(, "[a-z-]+")*' "$here/makoctl.swift" | grep -oE '"[a-z-]+"' | tr -d '"'); do
+  grep -q "makoctl <pid> $cmd" "$doc" || { echo "doc-check: makoctl $cmd is not documented in $doc"; missing=$((missing + 1)); }
+done
+for cmd in $(grep -oE '^[a-z]+\)' "$here/control-mako" | tr -d ')'); do
+  grep -q "control-mako $cmd" "$doc" || { echo "doc-check: control-mako $cmd is not documented in $doc"; missing=$((missing + 1)); }
+done
+[ "$missing" = 0 ] && echo "doc-check: $doc covers every command"
+exit "$missing"

@@ -25,6 +25,7 @@ go() { $M "$P" key cmd+l; s 0.3; $M "$P" type "$1"; $M "$P" key return; }
 has_tree() { $M "$P" tree "${2:-8}" | grep -q "$1"; }
 trap '$C stop >/dev/null 2>&1' EXIT
 
+.claude/skills/verify-mako/scripts/doc-check || fails=$((fails + $?))
 $C build >/dev/null || { echo "FAIL build"; exit 99; }
 mkdir -p "$E"
 
@@ -171,7 +172,7 @@ echo "== perf"
 $C stop >/dev/null 2>&1
 .claude/skills/verify-mako/scripts/perf | grep -v '^==' | while read -r line; do echo "$line"; done
 perf_fails=${PIPESTATUS[0]}
-fails=$((fails + perf_fails))
+if [ "$perf_fails" = 100 ]; then echo "SKIP perf budgets not checked (busy machine)"; else fails=$((fails + perf_fails)); fi
 
 echo "== $fails failure(s); evidence in $E"
 exit "$fails"

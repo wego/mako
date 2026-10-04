@@ -27,6 +27,10 @@ Links that try to open a new window load in the current tab. Mako's own shortcut
 
 `script/icon design/icon-variants/<variant>.png` regenerates `app/Resources/AppIcon.icns`. Six variants were generated with `gpt-image-2.5-sunburst`.
 
+## Scripting and agents
+
+`docs/control.md` documents how to drive Mako from scripts or agents: launching an isolated instance, reading tabs and page text, pressing menus and buttons, and the AX identifiers Mako exposes.
+
 ## Verification
 
 The `verify-mako` skill (`.claude/skills/verify-mako/`) launches an isolated instance (`MAKO_CONFIG` points at a throwaway config) and drives it through the accessibility API. Needs Accessibility and Screen Recording permission for the terminal.

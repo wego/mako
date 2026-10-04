@@ -96,6 +96,7 @@ let usage = """
     makoctl <pid> exists <ax-identifier>   exit 0 if present in the tree
     makoctl <pid> menu <Menu> <Item>       press a menu item via AX
     makoctl <pid> press <name>             AXPress the first control whose title/desc/value is name (web buttons, links)
+    makoctl <pid> text                     full visible text of the active page, one line per text run
     makoctl <pid> windows                  one line per window (popups have id="mako.popup")
     makoctl <pid> menu-items <Menu>        list a menu's item titles (checked = active)
     makoctl <pid> key <combo>              e.g. return, escape, cmd+t, cmd+1, cmd+z
@@ -167,6 +168,18 @@ case "press":
     guard args.count > 2 else { fail(usage, 64) }
     guard let e = find(app, named: args[2]) else { fail("no pressable element named \"\(args[2])\"", 4) }
     AXUIElementPerformAction(e, kAXPressAction as CFString)
+case "text":
+    func webArea(_ e: AXUIElement) -> AXUIElement? {
+        if str(e, kAXRoleAttribute) == "AXWebArea" { return e }
+        for c in children(e) { if let f = webArea(c) { return f } }
+        return nil
+    }
+    func collect(_ e: AXUIElement) {
+        if str(e, kAXRoleAttribute) == kAXStaticTextRole, let v = str(e, kAXValueAttribute) { print(v) }
+        children(e).forEach(collect)
+    }
+    guard let area = webArea(mainWindow()) else { fail("no page content", 4) }
+    collect(area)
 case "windows":
     for w in (attr(app, kAXWindowsAttribute) as? [AXUIElement]) ?? [] { print(line(w)) }
 case "menu-items":

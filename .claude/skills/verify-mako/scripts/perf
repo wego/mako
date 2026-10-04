@@ -28,6 +28,14 @@ budget() {
   else echo "FAIL $name ${value}${unit} (budget ${limit}${unit})"; fails=$((fails + 1)); fi
 }
 trap '$C stop >/dev/null 2>&1' EXIT
+
+# A loaded machine measures itself, not Mako: skip rather than report a false PASS or FAIL.
+load=$(sysctl -n vm.loadavg | awk '{print int($2 + 0.5)}')
+cores=$(sysctl -n hw.ncpu)
+if [ "$load" -gt "$cores" ]; then
+  echo "SKIP perf: machine busy (1-min load $load > $cores cores); inconclusive, rerun when idle"
+  exit 100
+fi
 mkdir -p "$E"
 
 page() { echo "data:text/html,<title>$1</title><h1>$1</h1>"; }

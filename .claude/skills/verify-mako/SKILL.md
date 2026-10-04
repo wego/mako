@@ -37,6 +37,8 @@ Prints `OK pid … build <mtime> title "…"` only when the PID is alive, is thi
 
 ## Drive
 
+Full command reference, exit codes, AX handles, and recipes: `docs/control.md`. Any new `makoctl` or `control-mako` command must be added there; `scripts/doc-check` (run by `smoke`) fails otherwise.
+
 `makoctl <pid> <command>` (run `$M` with no args for the full list):
 
 | Command | Use |
