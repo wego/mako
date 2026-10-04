@@ -120,7 +120,7 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         field.isBordered = false
         field.drawsBackground = false
         field.focusRingType = .none
-        field.font = .systemFont(ofSize: 20)
+        field.font = .monospacedSystemFont(ofSize: 18, weight: .regular)
         field.placeholderString = "Search or enter address"
         field.delegate = self
         hint.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
