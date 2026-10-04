@@ -38,6 +38,15 @@ func dump(_ e: AXUIElement, _ depth: Int, _ max: Int, menus: Bool) {
     if depth < max { children(e).forEach { dump($0, depth + 1, max, menus: menus) } }
 }
 
+func find(_ e: AXUIElement, named name: String) -> AXUIElement? {
+    if [kAXTitleAttribute, kAXDescriptionAttribute, kAXValueAttribute].contains(where: { str(e, $0) == name }),
+       str(e, kAXRoleAttribute) != kAXStaticTextRole {
+        return e
+    }
+    for c in children(e) { if let f = find(c, named: name) { return f } }
+    return nil
+}
+
 func find(_ e: AXUIElement, id: String) -> AXUIElement? {
     if str(e, kAXIdentifierAttribute) == id { return e }
     for c in children(e) { if let f = find(c, id: id) { return f } }
@@ -86,6 +95,8 @@ let usage = """
     makoctl <pid> value <ax-identifier>    AXValue of the element with that identifier
     makoctl <pid> exists <ax-identifier>   exit 0 if present in the tree
     makoctl <pid> menu <Menu> <Item>       press a menu item via AX
+    makoctl <pid> press <name>             AXPress the first control whose title/desc/value is name (web buttons, links)
+    makoctl <pid> windows                  one line per window (popups have id="mako.popup")
     makoctl <pid> menu-items <Menu>        list a menu's item titles (checked = active)
     makoctl <pid> key <combo>              e.g. return, escape, cmd+t, cmd+1, cmd+z
     makoctl <pid> type <text>              type text into the focused element
@@ -118,14 +129,17 @@ func mainWindow() -> AXUIElement {
 // A background app has no key window, so keys and nil-targeted menu actions go nowhere.
 func focus() {
     guard let running = NSRunningApplication(processIdentifier: pid), !running.isActive else { return }
-    running.activate()
-    let deadline = Date().addingTimeInterval(2)
-    while !running.isActive && Date() < deadline { usleep(50_000) }
-    if !running.isActive { fail("could not activate pid \(pid)", 7) }
+    // macOS may refuse a background tool's request while the user works in another app; retry.
+    let deadline = Date().addingTimeInterval(4)
+    while !running.isActive && Date() < deadline {
+        running.activate(options: [.activateAllWindows])
+        for _ in 0..<10 where !running.isActive { usleep(50_000) }
+    }
+    if !running.isActive { fail("could not activate pid \(pid): another app kept focus; ask the user to stop typing during the run", 7) }
     usleep(150_000)
 }
 
-if ["menu", "key", "type", "time-key"].contains(args[1]) { focus() }
+if ["menu", "key", "type", "time-key", "press"].contains(args[1]) { focus() }
 
 func postCombo(_ combo: String, settle: Bool = true) {
     let parts = combo.lowercased().split(separator: "+").map(String.init)
@@ -149,6 +163,12 @@ case "value", "exists":
 case "menu":
     guard args.count > 3 else { fail(usage, 64) }
     AXUIElementPerformAction(menuItem(app, args[2], args[3]), kAXPressAction as CFString)
+case "press":
+    guard args.count > 2 else { fail(usage, 64) }
+    guard let e = find(app, named: args[2]) else { fail("no pressable element named \"\(args[2])\"", 4) }
+    AXUIElementPerformAction(e, kAXPressAction as CFString)
+case "windows":
+    for w in (attr(app, kAXWindowsAttribute) as? [AXUIElement]) ?? [] { print(line(w)) }
 case "menu-items":
     guard args.count > 2 else { fail(usage, 64) }
     for i in children(submenu(app, args[2])) { if let t = str(i, kAXTitleAttribute) { print(line(i).contains("checked") ? "* \(t)" : "  \(t)") } }

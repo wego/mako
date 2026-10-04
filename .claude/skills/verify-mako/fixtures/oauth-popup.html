@@ -1,0 +1,10 @@
+<!doctype html><title>provider</title>
+<p>provider sign-in</p>
+<script>
+if (!location.search.includes('plain')) {
+  setTimeout(() => {
+    if (window.opener) { window.opener.postMessage('token-123', '*'); window.close() }
+    else document.title = 'no opener'
+  }, 500)
+}
+</script>

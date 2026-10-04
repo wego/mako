@@ -120,6 +120,20 @@ check block-live-edit sh -c "sleep 2; $M $P tree 8 | grep -q 'example.com is blo
 kill "$logpid" 2>/dev/null; wait "$logpid" 2>/dev/null
 check block-log grep -q "block mobile.x.com" "$E/block-log.txt"
 
+echo "== popups (sign-in)"
+port=$((20000 + RANDOM % 20000))
+python3 -m http.server "$port" --bind 127.0.0.1 -d .claude/skills/verify-mako/fixtures >/dev/null 2>&1 &
+srv=$!; s 1
+go "http://127.0.0.1:$port/oauth-opener.html"
+check popup-fixture-loads $M "$P" wait-title "opener" 8
+$M "$P" press "Continue with Provider"
+check popup-opener-gets-token $M "$P" wait-title "signed in" 6
+check popup-closes sh -c "sleep 1; ! $M $P windows | grep -q mako.popup"
+check popup-not-a-tab $M "$P" wait-title "signed in – 1/1" 1
+$M "$P" press "plain target=_blank link"
+check blank-link-same-tab $M "$P" wait-title "provider – 1/1" 6
+kill "$srv" 2>/dev/null; wait "$srv" 2>/dev/null
+
 echo "== page shortcuts"
 probe="data:text/html,<title>probe</title><script>addEventListener('keydown',e=>{if(e.metaKey){e.preventDefault();document.title='got '+e.key}})</script><body contenteditable>edit</body>"
 launch "" "$probe"
@@ -152,6 +166,12 @@ $C quit >/dev/null; $C relaunch >/dev/null; P=$($C pid)
 check session-off $M "$P" wait-title "New Tab – 1/1" 5
 $C quit >/dev/null
 check session-off-deletes test ! -e "$run/state/session.json"
+
+echo "== perf"
+$C stop >/dev/null 2>&1
+.claude/skills/verify-mako/scripts/perf | grep -v '^==' | while read -r line; do echo "$line"; done
+perf_fails=${PIPESTATUS[0]}
+fails=$((fails + perf_fails))
 
 echo "== $fails failure(s); evidence in $E"
 exit "$fails"

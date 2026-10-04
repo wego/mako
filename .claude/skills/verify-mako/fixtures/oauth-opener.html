@@ -1,0 +1,4 @@
+<!doctype html><title>opener</title>
+<button id="login" onclick="window.open('/oauth-popup.html', 'auth', 'width=480,height=600')">Continue with Provider</button>
+<a id="blank" href="/oauth-popup.html?plain" target="_blank">plain target=_blank link</a>
+<script>addEventListener('message', e => { if (e.data === 'token-123') document.title = 'signed in' })</script>

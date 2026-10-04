@@ -36,3 +36,4 @@ Each file: H1 title, one paragraph of user-visible behavior, then `Sub-features`
 - [Developer console](./devtools.md) covers opening, using, and closing the Web Inspector.
 - [Session restore](./session.md) covers saving at quit, restoring at launch, and turning it off.
 - [Navigation and zoom](./navigation.md) covers back, forward, reload, and zoom.
+- [Sign-in popups](./popups.md) covers OAuth-style popups, `window.opener`, `target=_blank` links, and the user agent.
