@@ -1,31 +1,32 @@
 #!/bin/sh
 # Turns a 1024px generated icon into app/Resources/AppIcon.icns.
-# Usage: script/icon [design/icon-variants/<variant>.png]
+# Usage: script/icon [image.png]   (default: design/app-icon.png)
 set -eu
 cd "$(dirname "$0")/.."
-src=${1:-design/icon-variants/4-liquid-glass-fin.png}
+src=${1:-design/app-icon.png}
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
-# Generated tiles sit on a white canvas; flood the outside white to transparent.
+# Generated tiles sit on a white canvas, often with a soft gray drop shadow under
+# them. Find the tile by colour (the canvas and shadow are near-grey), crop to it,
+# and cut it with a fresh rounded-square mask inset 1% so no shadow or light rim
+# survives at the edges.
 uv run -q --with pillow python - "$src" "$work/icon.png" <<'PY'
 import sys
-from PIL import Image, ImageDraw
-im = Image.open(sys.argv[1]).convert("RGBA")
-mask = Image.new("L", im.size, 255)
-rgb = im.convert("RGB")
-w, h = im.size
-for seed in [(0, 0), (w - 1, 0), (0, h - 1), (w - 1, h - 1)]:
-    ImageDraw.floodfill(rgb, seed, (255, 0, 255), thresh=40)
-px = rgb.load()
-mp = mask.load()
-for y in range(h):
-    for x in range(w):
-        if px[x, y] == (255, 0, 255):
-            mp[x, y] = 0
-im.putalpha(mask)
-im = im.crop(im.getbbox())
-# Apple's macOS icon grid: an 824px tile centered on a 1024px canvas.
-im = im.resize((824, 824), Image.LANCZOS)
+from PIL import Image, ImageChops, ImageDraw
+im = Image.open(sys.argv[1]).convert("RGB")
+r, g, b = im.split()
+hi = ImageChops.lighter(ImageChops.lighter(r, g), b)
+lo = ImageChops.darker(ImageChops.darker(r, g), b)
+saturated = ImageChops.subtract(hi, lo).point(lambda v: 255 if v > 40 else 0)
+dark = im.convert("L").point(lambda v: 255 if v < 120 else 0)
+tile = im.crop(ImageChops.lighter(saturated, dark).getbbox()).resize((824, 824), Image.LANCZOS)
+# Apple's macOS icon grid: an 824px tile (corner radius ~185px) on a 1024px canvas.
+scale = 4
+mask = Image.new("L", (824 * scale, 824 * scale), 0)
+inset = int(824 * 0.01) * scale
+ImageDraw.Draw(mask).rounded_rectangle((inset, inset, 824 * scale - inset, 824 * scale - inset), radius=185 * scale, fill=255)
+tile.putalpha(mask.resize((824, 824), Image.LANCZOS))
+im = tile
 canvas = Image.new("RGBA", (1024, 1024))
 canvas.paste(im, (100, 100))
 canvas.save(sys.argv[2])
