@@ -64,6 +64,7 @@ for i in $(seq 1 "$N"); do
   P=$($C pid)
   $M "$P" wait-title first 10 >/dev/null || { echo "FAIL first page never rendered"; exit 99; }
   launches+=($(($(now_ms) - t0)))
+  "$M" "$P" pointer-center
   sleep 0.3
   news+=($($M "$P" time-key cmd+t "New Tab – 2/2"))
   $M "$P" key escape
