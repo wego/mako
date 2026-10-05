@@ -34,6 +34,7 @@ mkdir -p "$E"
 echo "== omnibox"
 launch "" https://example.com
 check omni-start $M "$P" wait-title "Example Domain – 1/1" 8
+s  # a key sent the instant the first page lands can be dropped while launch finishes
 $M "$P" key cmd+l; s
 check omni-open-prefill test "$($M "$P" value mako.omnibox.field)" = "https://example.com/"
 check omni-status sh -c "$M $P value mako.omnibox.status | grep -q '1/3 tabs'"
@@ -146,7 +147,13 @@ if MAKO_RUN="$other" $C launch "" "http://127.0.0.1:$port/storage.html" >/dev/nu
   check iso-other-run-cannot-see $M "$(MAKO_RUN="$other" $C pid)" wait-title "cookie=no local=no" 8
 else fail "iso-other-run-launch"; fi
 MAKO_RUN="$other" $C stop >/dev/null; rm -rf "$other"
-check iso-daily-untouched test "$daily_before" = "$(daily_stamp)"
+# The user's own Mako legitimately writes its cookies while running, so only a closed
+# daily Mako can prove a run never touched its data.
+if pgrep -f "/Applications/Mako.app/Contents/MacOS/Mako" >/dev/null; then
+  echo "SKIP iso-daily-untouched (the daily Mako is running and writes its own data)"
+else
+  check iso-daily-untouched test "$daily_before" = "$(daily_stamp)"
+fi
 kill "$srv" 2>/dev/null; wait "$srv" 2>/dev/null
 
 echo "== about"
