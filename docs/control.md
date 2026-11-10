@@ -116,6 +116,8 @@ Stable identifiers Mako sets for automation. Prefer these, menu titles, and the 
 | `mako.sidebar` | The trails sidebar. |
 | `mako.trail.<id>` | A sidebar row (a page). `id` is the page's permanent id, not a position. Its AX value is `selected` on the active page. |
 | `mako.trail.<id>.toggle` | That row's collapse/expand control (only when it has pages beneath it). |
+| `mako.trail.<id>.name` | The text field that replaces a row's label while it is being renamed (Trails → Rename Page…). `set` it, then `confirm` it. |
+| `mako.divider` | The edge between sidebar and page. Its value is the sidebar width in points; `set mako.divider 300` resizes it (kept between 160 and 480). |
 | `mako.trail.<id>.page` | A loaded page's web view. Only recently shown pages are loaded. |
 | `mako.omnibox` | The address bar panel (present while hidden). |
 | `mako.omnibox.field` | Its text field; `value` is the text in it. |
@@ -123,7 +125,7 @@ Stable identifiers Mako sets for automation. Prefer these, menu titles, and the 
 | `mako.blank` | The app icon shown when no page is open. |
 | `mako.popup` | A sign-in popup window. |
 
-Menu bar: `Mako` (About Mako, Settings…, Hide, Quit), `File` (New Trail, New Page in Trail, Open Location…, Close Page, Reopen Closed Page), `Edit`, `View` (Reload, Zoom In/Out, Actual Size, Developer Console), `History` (Back, Forward), `Trails` (Next Page, Previous Page, then one item per visible page, indented by depth, the active one checked).
+Menu bar: `Mako` (About Mako, Settings…, Hide, Quit), `File` (New Trail, New Page in Trail, Open Location…, Close Page, Reopen Closed Page), `Edit` (… Find…, Find Next, Find Previous), `View` (Reload, Zoom In/Out, Actual Size, Developer Console), `History` (Back, Forward), `Trails` (Next Page, Previous Page, Move Page Up, Move Page Down, Indent Page, Outdent Page, Rename Page…, then one item per visible page, indented by depth, the active one checked).
 
 ## Recipes
 
@@ -183,6 +185,17 @@ Watch Mako's own decisions (navigation allowed or blocked, popups, page loads):
 log stream --level info --predicate 'subsystem == "com.wego.mako"' --style compact
 ```
 
+Move, rename and find, all in the background:
+
+```sh
+$M $P menu Trails "Indent Page"        # active page goes under the page above it; Outdent, Move Page Up/Down likewise
+$M $P menu Trails "Rename Page…"; $M $P set mako.trail.6.name "Mine"; $M $P confirm mako.trail.6.name
+$M $P menu Edit "Find…"; $M $P set mako.omnibox.field needle; $M $P confirm mako.omnibox.field
+$M $P value mako.omnibox.status         # first line is "Not found" on a miss
+```
+
+Dragging a row onto another (before, after or inside it) has no AX equivalent; the menu moves reach the same core actions.
+
 ## Running while the Mac is in use
 
 Set `MAKO_BACKGROUND=1` for both tools. `control-mako launch` then starts the test copy behind every other window and Mako never activates itself; `makoctl` refuses `key`, `type` and `time-key` (they need focus) and everything else works through AX: `menu`, `press`, `press-id`, `set`, `confirm`, and all the read commands. Mako's own menu items name the browser as their target, so they work while it is in the background.
@@ -196,7 +209,7 @@ Set `MAKO_BACKGROUND=1` for both tools. `control-mako launch` then starts the te
 ## Verification and performance
 
 - `scripts/trails-bg`: trails behaviour (links nest, restart restore, lazy loading, trail cap, blocked links, form submits) with no focus and no permissions. 18 checks.
-- `scripts/trails-ax`: the trails UI through accessibility actions, no focus: sidebar rows, collapse, omnibox, trail cap, close, Undo Close across a restart. 20 checks. Needs Accessibility permission.
+- `scripts/trails-ax`: the trails UI through accessibility actions, no focus: sidebar rows, collapse, omnibox, trail cap, close, Undo Close across a restart, moving and renaming pages, sidebar width, find in page. 36 checks. Needs Accessibility permission.
 - `scripts/smoke`: every feature recipe in `.claude/skills/verify-mako/features/`, then `perf`. One `PASS`/`FAIL` line per check; exit status is the number of failures. Takes focus for about 3 minutes.
 - `scripts/perf`: performance budgets (launch, new tab, tab switch, memory, bundle size, Rust core). See the top of the script for the numbers.
 - `scripts/ab <base-checkout> <candidate-checkout> [rounds]`: paired A/B of in-app latency (launch, new tab, tab switch) between two built checkouts, interleaving launches so background load hits both alike. Prints medians, the median paired delta, and how often the candidate won. Use it to decide whether a change is faster; a single `perf` run is too noisy on a busy Mac.

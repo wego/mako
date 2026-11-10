@@ -72,6 +72,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 item("Copy", #selector(NSText.copy(_:)), "c"),
                 item("Paste", #selector(NSText.paste(_:)), "v"),
                 item("Select All", #selector(NSText.selectAll(_:)), "a"),
+                .separator(),
+                item("Find…", #selector(Browser.findInPage), "f"),
+                item("Find Next", #selector(Browser.findNext), "g"),
+                item("Find Previous", #selector(Browser.findPrevious), "g", [.command, .shift]),
             ]),
             menu("View", [
                 item("Reload", #selector(Browser.reload), "r"),

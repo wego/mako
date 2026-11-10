@@ -48,6 +48,14 @@ check previous-page is 's["active"]' 2
 $M "$P" menu Trails "Next Page"; sleep 0.4
 check next-page is 's["active"]' 3
 
+echo "== sidebar width"
+check default-width-is-a-fifth-of-the-window test "$($M "$P" value mako.divider)" = 240
+$M "$P" set mako.divider 300; sleep 0.3
+check width-can-be-set test "$($M "$P" value mako.divider)" = 300
+$M "$P" set mako.divider 9999; sleep 0.3
+check width-is-capped test "$($M "$P" value mako.divider)" = 480
+$M "$P" set mako.divider 300; sleep 0.3
+
 echo "== omnibox"
 omni "New Trail" "$U/c.html?t2"
 check new-trail is 's["roots"]' "[1, 4]"
@@ -71,6 +79,32 @@ $M "$P" press-id mako.trail.5; sleep 0.4; $M "$P" menu File "Close Page"; sleep 
 $C quit >/dev/null; sleep 1; $C relaunch >/dev/null; P=$($C pid); sleep 3
 $M "$P" menu File "Reopen Closed Page"; sleep 1
 check undo-works-after-restart is '(n["5"]["parent"], s["active"], len(s["closed"]))' "(4, 5, 0)"
+check width-survives-restart test "$($M "$P" value mako.divider)" = 300
+
+echo "== move and rename"
+$M "$P" menu Trails "Outdent Page"; sleep 0.4
+check outdent-into-a-third-trail-refused is '(n["5"]["parent"], s["roots"])' "(4, [1, 4])"
+$M "$P" press-id mako.trail.4; sleep 0.4; omni "New Page in Trail" "$U/c.html?six"
+check second-child is 'n["4"]["children"]' "[5, 6]"
+$M "$P" menu Trails "Move Page Up"; sleep 0.4
+check move-up is 'n["4"]["children"]' "[6, 5]"
+$M "$P" menu Trails "Move Page Down"; sleep 0.4
+check move-down is 'n["4"]["children"]' "[5, 6]"
+$M "$P" menu Trails "Indent Page"; sleep 0.4
+check indent-goes-under-the-page-above is '(n["6"]["parent"], n["5"]["children"])' "(5, [6])"
+$M "$P" menu Trails "Outdent Page"; sleep 0.4
+check outdent-lands-after-its-parent is '(n["6"]["parent"], n["4"]["children"])' "(4, [5, 6])"
+$M "$P" menu Trails "Rename Page…"; sleep 0.4
+$M "$P" set mako.trail.6.name "Mine"; $M "$P" confirm mako.trail.6.name; sleep 0.5
+check rename is 'n["6"]["name"]' Mine
+check renamed-page-titles-the-window test "$($M "$P" title)" = Mine
+check each-page-listed-once test "$($M "$P" tree | grep -c 'id=\"mako\.trail\.[0-9]*\"')" = "$(q 'len(n)')"
+
+echo "== find in page"
+$M "$P" menu Edit "Find…"; sleep 0.3; $M "$P" set mako.omnibox.field "leaf"; $M "$P" confirm mako.omnibox.field; sleep 0.8
+check find-hit sh -c "! $M $P value mako.omnibox.status | grep -q 'Not found'"
+$M "$P" set mako.omnibox.field "zzzqqq"; $M "$P" confirm mako.omnibox.field; sleep 0.8
+check find-miss sh -c "$M $P value mako.omnibox.status | head -1 | grep -q 'Not found'"
 $M "$P" shot "$E/sidebar.png" >/dev/null
 
 check never-took-focus test "$(front)" = "$before"
