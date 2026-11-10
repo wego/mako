@@ -27,7 +27,8 @@ Trails replace tabs. A trail is a tree of pages in the sidebar: a followed link 
 
 Preconditions: baseline. For background runs set `MAKO_BACKGROUND=1` (then use `menu`, `press-id`, `set`, `confirm`; no `key`/`type`). Fixture pages that click their own links are in `fixtures/trails/`; serve them with `python3 -m http.server $PORT --bind 127.0.0.1 -d .claude/skills/verify-mako/fixtures/trails &`.
 
-- **No permissions, no focus.** `.claude/skills/verify-mako/scripts/trails-bg` covers `trail-link`, `trail-in-place`, `trail-external`, `trail-restore` and `trail-blocked-link` by reading `trails.json` and the log. 15 checks, proven.
+- **No permissions, no focus.** `.claude/skills/verify-mako/scripts/trails-bg` covers `trail-link`, `trail-in-place`, `trail-external`, `trail-restore` and `trail-blocked-link` by reading `trails.json` and the log. 18 checks.
+- **AX, no focus.** `.claude/skills/verify-mako/scripts/trails-ax` covers `trail-select`, `trail-collapse`, `trail-new` and the cap, `trail-child`, `trail-close`, `trail-undo` (also after a restart) through `press-id`, `menu`, `set` and `confirm`. 20 checks. The bullets below are what it runs.
 - **Link.** Launch on `$U/a.html`. `$M $P menu-items Trails` lists `Page A`, `Page B`, `Page C` with `Page C` checked; `python3 -m json.tool verify-runs/latest/state/trails.json` shows page 3 under 2 under 1.
 - **New trail and cap.** `$M $P menu File "New Trail"; $M $P set mako.omnibox.field example.com; $M $P confirm mako.omnibox.field`. A second root appears. Repeat: `value mako.omnibox.status` starts `Can’t open: trail cap reached (2)`.
 - **Select.** `$M $P press-id mako.trail.1`. `title` is `Page A`; `value mako.trail.1` is `selected`.
@@ -38,6 +39,7 @@ Preconditions: baseline. For background runs set `MAKO_BACKGROUND=1` (then use `
 ## Gotchas
 
 - Row ids are permanent page ids, not positions; read them from `trails.json` or `tree`.
-- Only the bullets marked proven have been run. The AX-driven bullets were written when the session's terminal lacked Accessibility permission; run them once before relying on them and fix this file.
+- Reopening a closed page reloads it. A fixture page that clicks its own link (a.html, b.html) then opens a new child again, so assert Undo Close with pages that do not (c.html).
+- ⌘T, ⌥⌘T, ⌘W, ⇧⌘T and ⌃Tab as real key presses are not covered by either script (keys need focus); they share the menu actions the scripts press.
 - `smoke`, `perf` and `ab` still assert the old tab titles (`– 1/3`, `New Tab`) and shortcuts (⌘1). They fail until rewritten for trails.
 - A page inside a collapsed row has no sidebar row; selecting it (Trails menu cannot, `trails.json` + `select` via a link can) expands the way to it.

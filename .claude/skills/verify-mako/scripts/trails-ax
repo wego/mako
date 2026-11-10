@@ -1,0 +1,78 @@
+#!/bin/bash
+# Drives the trails UI through accessibility actions without taking focus: sidebar
+# rows, collapse, the omnibox, the trail cap, close, Undo Close (also after a restart).
+# Needs Accessibility permission for the terminal; no keys are sent, so it is safe to
+# run while the Mac is in use. Prints PASS/FAIL per check; exit status = failures.
+set -u
+cd "$(dirname "$0")/../../../.."
+export MAKO_BACKGROUND=1 MAKO_RUN="$PWD/verify-runs/trails-ax"
+C=.claude/skills/verify-mako/scripts/control-mako; M=verify-runs/.bin/makoctl
+J="$MAKO_RUN/state/trails.json"; E="$MAKO_RUN/evidence"
+fails=0; P=
+pass() { echo "PASS $1"; }
+fail() { echo "FAIL $1"; fails=$((fails + 1)); }
+check() { local name=$1; shift; if "$@" >/dev/null 2>&1; then pass "$name"; else fail "$name ($(q 'str(s["active"])+" "+str(s["roots"])' 2>/dev/null))"; fi; }
+# q <python expression over s>: reads the saved state
+q() { python3 -c "import json; s=json.load(open('$J')); n=s['nodes']; print($1)"; }
+is() { test "$(q "$1")" = "$2"; }
+front() { osascript -e 'tell application "System Events" to get name of first process whose frontmost is true' 2>/dev/null; }
+omni() { $M "$P" menu File "$1"; sleep 0.3; $M "$P" set mako.omnibox.field "$2"; $M "$P" confirm mako.omnibox.field; sleep "${3:-2}"; }
+trap '$C stop >/dev/null 2>&1; kill $srv 2>/dev/null; wait $srv 2>/dev/null' EXIT
+
+$C stop >/dev/null 2>&1
+$C build >/dev/null || { echo "FAIL build"; exit 99; }
+mkdir -p "$E"
+port=$((20000 + RANDOM % 20000))
+python3 -m http.server "$port" --bind 127.0.0.1 -d .claude/skills/verify-mako/fixtures/trails >/dev/null 2>&1 &
+srv=$!; sleep 1
+U="http://127.0.0.1:$port"
+before=$(front)
+out=$($C launch "" "$U/a.html" 2>&1) || { echo "FAIL launch: $out"; exit 99; }
+P=$($C pid); sleep 4
+
+echo "== sidebar"
+check sidebar-lists-the-trail sh -c "$M $P menu-items Trails | grep -q '^\* Page C'"
+$M "$P" press-id mako.trail.1; sleep 0.8
+check row-press-selects is 's["active"]' 1
+check title-follows-selection test "$($M "$P" title)" = "Page A"
+check row-marked-selected test "$($M "$P" value mako.trail.1)" = selected
+$M "$P" press-id mako.trail.3; sleep 0.5; $M "$P" press-id mako.trail.1.toggle; sleep 0.5
+check collapse-hides-children sh -c "! $M $P menu-items Trails | grep -q 'Page B'"
+check collapse-moves-to-collapsed-page is 's["active"]' 1
+$M "$P" press-id mako.trail.1.toggle; sleep 0.5
+check expand-shows-children sh -c "$M $P menu-items Trails | grep -q 'Page B'"
+$M "$P" menu Trails "Page C"; sleep 0.5
+check menu-selects is 's["active"]' 3
+$M "$P" menu Trails "Previous Page"; sleep 0.4
+check previous-page is 's["active"]' 2
+$M "$P" menu Trails "Next Page"; sleep 0.4
+check next-page is 's["active"]' 3
+
+echo "== omnibox"
+omni "New Trail" "$U/c.html?t2"
+check new-trail is 's["roots"]' "[1, 4]"
+omni "New Trail" "$U/c.html?t3" 1
+check third-trail-refused is 'len(s["roots"])' 2
+check cap-message sh -c "$M $P value mako.omnibox.status | head -1 | grep -q 'trail cap reached (2)'"
+omni "New Page in Trail" "$U/c.html?child"
+check new-page-is-child is 'n["5"]["parent"]' 4
+omni "Open Location…" "$U/c.html?inplace"
+check open-location-stays-in-page is '(len(n), n["5"]["url"].endswith("inplace"))' "(5, True)"
+
+echo "== close and undo"
+cp "$J" "$E/pre-close.json"
+$M "$P" press-id mako.trail.4; sleep 0.5; cp "$J" "$E/pre-close.json"
+$M "$P" menu File "Close Page"; sleep 0.8
+check close-removes-subtree is '(s["roots"], len(n), len(s["closed"]))' "([1], 3, 1)"
+check close-moves-to-neighbour is 's["active"]' 1
+$M "$P" menu File "Reopen Closed Page"; sleep 1
+check undo-restores-exact-state cmp -s "$J" "$E/pre-close.json"
+$M "$P" press-id mako.trail.5; sleep 0.4; $M "$P" menu File "Close Page"; sleep 0.6
+$C quit >/dev/null; sleep 1; $C relaunch >/dev/null; P=$($C pid); sleep 3
+$M "$P" menu File "Reopen Closed Page"; sleep 1
+check undo-works-after-restart is '(n["5"]["parent"], s["active"], len(s["closed"]))' "(4, 5, 0)"
+$M "$P" shot "$E/sidebar.png" >/dev/null
+
+check never-took-focus test "$(front)" = "$before"
+echo "== $fails failure(s); evidence in $E"
+exit "$fails"

@@ -195,7 +195,8 @@ Set `MAKO_BACKGROUND=1` for both tools. `control-mako launch` then starts the te
 
 ## Verification and performance
 
-- `scripts/trails-bg`: trails behaviour (links nest, restart restore, lazy loading, trail cap, blocked links, form submits) with no focus and no permissions. 15 checks.
+- `scripts/trails-bg`: trails behaviour (links nest, restart restore, lazy loading, trail cap, blocked links, form submits) with no focus and no permissions. 18 checks.
+- `scripts/trails-ax`: the trails UI through accessibility actions, no focus: sidebar rows, collapse, omnibox, trail cap, close, Undo Close across a restart. 20 checks. Needs Accessibility permission.
 - `scripts/smoke`: every feature recipe in `.claude/skills/verify-mako/features/`, then `perf`. One `PASS`/`FAIL` line per check; exit status is the number of failures. Takes focus for about 3 minutes.
 - `scripts/perf`: performance budgets (launch, new tab, tab switch, memory, bundle size, Rust core). See the top of the script for the numbers.
 - `scripts/ab <base-checkout> <candidate-checkout> [rounds]`: paired A/B of in-app latency (launch, new tab, tab switch) between two built checkouts, interleaving launches so background load hits both alike. Prints medians, the median paired delta, and how often the candidate won. Use it to decide whether a change is faster; a single `perf` run is too noisy on a busy Mac.

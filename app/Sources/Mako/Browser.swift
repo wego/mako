@@ -120,8 +120,10 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         super.init()
         window.delegate = self
         window.tabbingMode = .disallowed
-        window.setFrameAutosaveName("main")
         buildLayout()
+        // After the layout exists: installing a constraint-based content view resizes the window.
+        window.setContentSize(NSSize(width: 1200, height: 800))
+        window.setFrameAutosaveName("main")
         webConfig.preferences.isElementFullscreenEnabled = true
         webConfig.preferences.setValue(true, forKey: "developerExtrasEnabled")
         // Google and others refuse sign-in from web views whose user agent lacks Safari's token.
@@ -161,20 +163,28 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         scroll.setAccessibilityIdentifier("mako.sidebar")
         scroll.setAccessibilityLabel("Trails")
 
-        let split = NSSplitView()
-        split.isVertical = true
-        split.dividerStyle = .thin
-        split.addArrangedSubview(scroll)
-        split.addArrangedSubview(container)
-        split.setHoldingPriority(.defaultHigh, forSubviewAt: 0)
-        window.contentView = split
+        // shortcut: fixed-width sidebar; make the divider draggable if anyone asks.
+        let root = NSView()
+        let divider = NSBox()
+        divider.boxType = .separator
+        for view in [scroll, divider, container] {
+            view.translatesAutoresizingMaskIntoConstraints = false
+            root.addSubview(view)
+        }
+        window.contentView = root
         NSLayoutConstraint.activate([
             blank.centerXAnchor.constraint(equalTo: container.centerXAnchor),
             blank.centerYAnchor.constraint(equalTo: container.centerYAnchor),
             blank.widthAnchor.constraint(equalToConstant: 128),
             blank.heightAnchor.constraint(equalToConstant: 128),
-            scroll.widthAnchor.constraint(greaterThanOrEqualToConstant: 160),
+            scroll.widthAnchor.constraint(equalToConstant: 240),
+            scroll.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            divider.leadingAnchor.constraint(equalTo: scroll.trailingAnchor),
+            divider.widthAnchor.constraint(equalToConstant: 1),
+            container.leadingAnchor.constraint(equalTo: divider.trailingAnchor),
+            container.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             container.widthAnchor.constraint(greaterThanOrEqualToConstant: 400),
+            container.heightAnchor.constraint(greaterThanOrEqualToConstant: 300),
             document.topAnchor.constraint(equalTo: scroll.contentView.topAnchor),
             document.leadingAnchor.constraint(equalTo: scroll.contentView.leadingAnchor),
             document.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor),
@@ -183,8 +193,12 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
             sidebar.trailingAnchor.constraint(equalTo: document.trailingAnchor),
             sidebar.bottomAnchor.constraint(equalTo: document.bottomAnchor),
         ])
-        split.setPosition(240, ofDividerAt: 0)
-        split.autosaveName = "sidebar"
+        // The divider can only be placed once the split view has a size; a saved position
+        // (autosave) then replaces this starting width.
+        for view in [scroll, divider, container] {
+            view.topAnchor.constraint(equalTo: root.topAnchor).isActive = true
+            view.bottomAnchor.constraint(equalTo: root.bottomAnchor).isActive = true
+        }
     }
 
     private func page(_ webView: WKWebView) -> URL? {
@@ -278,7 +292,9 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
             let toggle = NSButton(title: row.hasChildren ? (row.collapsed ? "▸" : "▾") : "", target: self, action: #selector(toggleRow(_:)))
             toggle.isBordered = false
             toggle.tag = Int(row.id)
-            toggle.isHidden = !row.hasChildren
+            // Kept in the row (not hidden) so pages without children still line up.
+            toggle.isEnabled = row.hasChildren
+            toggle.setAccessibilityElement(row.hasChildren)
             toggle.setAccessibilityIdentifier("mako.trail.\(row.id).toggle")
             toggle.setAccessibilityLabel(row.collapsed ? "Expand" : "Collapse")
             toggle.widthAnchor.constraint(equalToConstant: 14).isActive = true

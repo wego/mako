@@ -80,7 +80,13 @@ Kills only the PID this run launched and removes `$MAKO_RUN/state` and the run's
 .claude/skills/verify-mako/scripts/trails-bg
 ```
 
-Checks trails behaviour (links nest, in-place navigation, restart restore, lazy loading, trail cap, blocked links) without taking focus and without Accessibility or Screen Recording permission. Run it first after any change to navigation or the tree; it is safe while the person is using the Mac. With `MAKO_BACKGROUND=1`, `control-mako` and `makoctl` also work without focus through AX actions (see `docs/control.md`), which does need Accessibility permission.
+`trails-bg` checks trails behaviour (links nest, in-place navigation, restart restore, lazy loading, trail cap, blocked links) without taking focus and without Accessibility or Screen Recording permission.
+
+```sh
+.claude/skills/verify-mako/scripts/trails-ax
+```
+
+`trails-ax` drives the sidebar, omnibox, close and Undo Close through accessibility actions, also without focus; it needs Accessibility permission. Run both after any change to navigation, the tree or the sidebar; they are safe while the person is using the Mac. With `MAKO_BACKGROUND=1`, `control-mako` and `makoctl` work without focus for your own steps too (see `docs/control.md`).
 
 `smoke`, `perf` and `ab` below predate trails and fail until rewritten (see `features/trails.md`, Gotchas).
 
