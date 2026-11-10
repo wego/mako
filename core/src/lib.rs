@@ -2,6 +2,7 @@
 //! Pure functions only – the Swift shell owns I/O, clocks and the web view.
 
 mod ffi;
+pub mod trails;
 
 pub const DEFAULT_MAX_TABS: usize = 3;
 pub const DEFAULT_SEARCH: &str = "https://www.google.com/search?q=%s";
@@ -9,6 +10,7 @@ pub const DEFAULT_SEARCH: &str = "https://www.google.com/search?q=%s";
 #[derive(Debug, PartialEq)]
 pub struct Config {
     pub max_tabs: usize,
+    pub max_trails: usize,
     pub restore_session: bool,
     pub search: String,
     pub blocks: Vec<Block>,
@@ -31,12 +33,13 @@ pub struct Window {
 
 impl Default for Config {
     fn default() -> Self {
-        Config { max_tabs: DEFAULT_MAX_TABS, restore_session: true, search: DEFAULT_SEARCH.into(), blocks: vec![] }
+        Config { max_tabs: DEFAULT_MAX_TABS, max_trails: trails::DEFAULT_MAX_TRAILS, restore_session: true, search: DEFAULT_SEARCH.into(), blocks: vec![] }
     }
 }
 
 /// Config format, one directive per line, `#` comments:
 ///   max_tabs = 3
+///   max_trails = 2
 ///   restore_session = true
 ///   search = https://duckduckgo.com/?q=%s
 ///   block x.com                      # always
@@ -54,6 +57,9 @@ pub fn parse_config(text: &str) -> Result<Config, String> {
             match key.trim() {
                 "max_tabs" => {
                     cfg.max_tabs = val.parse().ok().filter(|n| *n > 0).ok_or_else(|| err("max_tabs must be a positive integer"))?
+                }
+                "max_trails" => {
+                    cfg.max_trails = val.parse().ok().filter(|n| *n > 0).ok_or_else(|| err("max_trails must be a positive integer"))?
                 }
                 "restore_session" => {
                     cfg.restore_session = val.parse().map_err(|_| err("restore_session must be true or false"))?
@@ -217,6 +223,7 @@ mod tests {
         let c = cfg("# focus\nmax_tabs = 2\nsearch = https://d.com/?q=%s\nblock *.X.com\nblock yt.com 09:00-18:00 mon-fri # work\n");
         assert_eq!(c.max_tabs, 2);
         assert!(c.restore_session);
+        assert_eq!((c.max_trails, cfg("max_trails = 4").max_trails), (2, 4));
         assert!(!cfg("restore_session = false").restore_session);
         assert_eq!(c.search, "https://d.com/?q=%s");
         assert_eq!(c.blocks[0], Block { domain: "x.com".into(), window: None });
@@ -228,7 +235,7 @@ mod tests {
 
     #[test]
     fn rejects_bad_config_with_line_number() {
-        for bad in ["max_tabs = 0", "restore_session = maybe", "search = x", "block", "block a.com 9-5", "block a.com 09:00-25:00", "block a.com 09:00-17:00 funday", "blok a.com", "colour = red"] {
+        for bad in ["max_tabs = 0", "max_trails = 0", "restore_session = maybe", "search = x", "block", "block a.com 9-5", "block a.com 09:00-25:00", "block a.com 09:00-17:00 funday", "blok a.com", "colour = red"] {
             assert!(parse_config(&format!("\n{bad}")).unwrap_err().starts_with("config line 2:"), "{bad}");
         }
     }

@@ -2,7 +2,7 @@
 //! re-parsed; it is a few lines, so this costs microseconds.
 //! Returned strings are owned by the caller and must go back via `mako_free`.
 
-use crate::{blocked, parse_config, resolve, Config};
+use crate::{blocked, parse_config, resolve, trails, Config};
 use std::ffi::{c_char, CStr, CString};
 
 unsafe fn text<'a>(p: *const c_char) -> &'a str {
@@ -45,9 +45,71 @@ pub extern "C" fn mako_blocked(cfg: *const c_char, host: *const c_char, weekday:
     out(blocked(&config(cfg), unsafe { text(host) }, weekday, minute))
 }
 
+/// What the shell gets back from every trails call: the new state to keep and save,
+/// plus the sidebar rows, or an error (the shell then keeps the state it had).
+fn trails_reply(result: Result<trails::Trails, trails::Error>) -> *mut c_char {
+    let json = match result {
+        Ok(state) => serde_json::json!({ "rows": trails::rows(&state), "state": state }),
+        Err(e) => serde_json::json!({ "error": e.to_string() }),
+    };
+    out(Some(json.to_string()))
+}
+
+/// Validates saved trails JSON (empty or NULL = a fresh, empty state).
+#[no_mangle]
+pub extern "C" fn mako_trails_load(state: *const c_char) -> *mut c_char {
+    let text = unsafe { text(state) };
+    trails_reply(if text.is_empty() { Ok(trails::Trails::default()) } else { trails::load(text) })
+}
+
+/// Applies one action (JSON, see trails::Action) to a state. Pure: same inputs, same reply.
+#[no_mangle]
+pub extern "C" fn mako_trails_apply(cfg: *const c_char, state: *const c_char, action: *const c_char) -> *mut c_char {
+    let result = trails::load(unsafe { text(state) }).and_then(|s| {
+        let action = serde_json::from_str(unsafe { text(action) }).map_err(|e| trails::Error::Invalid(format!("action: {e}")))?;
+        trails::apply(&s, &action, config(cfg).max_trails)
+    });
+    trails_reply(result)
+}
+
 #[no_mangle]
 pub extern "C" fn mako_free(s: *mut c_char) {
     if !s.is_null() {
         drop(unsafe { CString::from_raw(s) });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn call(f: impl FnOnce() -> *mut c_char) -> serde_json::Value {
+        let p = f();
+        let v = serde_json::from_str(unsafe { text(p) }).unwrap();
+        mako_free(p);
+        v
+    }
+    fn c(s: &str) -> CString { CString::new(s).unwrap() }
+
+    #[test]
+    fn trails_round_trip_through_the_c_abi() {
+        let fresh = call(|| mako_trails_load(std::ptr::null()));
+        assert_eq!(fresh["rows"].as_array().unwrap().len(), 0);
+        let cfg = c("max_trails = 1");
+        let apply = |state: &serde_json::Value, action: &str| {
+            let (s, a) = (c(&state.to_string()), c(action));
+            call(|| mako_trails_apply(cfg.as_ptr(), s.as_ptr(), a.as_ptr()))
+        };
+        let one = apply(&fresh["state"], r#"{"type":"open_trail","url":"https://a.test/"}"#);
+        let two = apply(&one["state"], r#"{"type":"open_child","parent":1,"url":"https://b.test/"}"#);
+        assert_eq!(two["rows"][1]["depth"], 1);
+        assert_eq!(two["rows"][1]["active"], true);
+        assert_eq!(apply(&two["state"], r#"{"type":"open_trail","url":"x"}"#)["error"], "trail cap reached (1)");
+        let closed = apply(&two["state"], r#"{"type":"close","id":2}"#);
+        let back = apply(&closed["state"], r#"{"type":"undo_close"}"#);
+        assert_eq!(back["state"], two["state"]);
+        assert!(apply(&two["state"], "{}")["error"].as_str().unwrap().starts_with("invalid trails state: action"));
+        let garbage = c("{");
+        assert!(call(|| mako_trails_load(garbage.as_ptr()))["error"].is_string());
     }
 }
