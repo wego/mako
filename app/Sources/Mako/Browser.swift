@@ -497,7 +497,8 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction) async -> WKNavigationActionPolicy {
         let url = action.request.url
         let mainFrame = action.targetFrame?.isMainFrame ?? true
-        if action.shouldPerformDownload { return .download }
+        // A download link obeys the blocklist like any other navigation.
+        if action.shouldPerformDownload { return url?.host().flatMap { Core.blockReason(host: $0) } == nil ? .download : .cancel }
         // A followed link opens beneath its page instead of replacing it. Jumps within the
         // same document (#section) and links in sign-in popups stay where they are. This comes
         // before the block check so a blocked link shows its notice in the new page, not over
@@ -527,12 +528,16 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
 
     /// Anything WebKit cannot show (zip, dmg, ...) is saved to Downloads instead.
     func webView(_ webView: WKWebView, decidePolicyFor response: WKNavigationResponse) async -> WKNavigationResponsePolicy {
-        response.canShowMIMEType ? .allow : .download
+        if response.canShowMIMEType { return .allow }
+        // Only the page itself may start a save, never an embedded frame, and never a blocked host.
+        guard response.isForMainFrame, response.response.url?.host().flatMap({ Core.blockReason(host: $0) }) == nil else { return .cancel }
+        return .download
     }
     func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) { download.delegate = self }
     func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) { download.delegate = self }
 
-    private var downloads: [ObjectIdentifier: URL] = [:]
+    /// Where each running download is going, and where it came from.
+    private var downloads: [ObjectIdentifier: (file: URL, source: URL?)] = [:]
 
     func download(_ download: WKDownload, decideDestinationUsing response: URLResponse, suggestedFilename: String) async -> URL? {
         let folder = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
@@ -545,13 +550,18 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
             let base = (name as NSString).deletingPathExtension, ext = (name as NSString).pathExtension
             target = folder.appending(path: ext.isEmpty ? "\(base) \(n)" : "\(base) \(n).\(ext)")
         }
-        downloads[ObjectIdentifier(download)] = target
+        downloads[ObjectIdentifier(download)] = (target, response.url)
         log.info("download to \(target.path, privacy: .public)")
         return target
     }
 
     func downloadDidFinish(_ download: WKDownload) {
-        guard let file = downloads.removeValue(forKey: ObjectIdentifier(download)) else { return }
+        guard let (file, source) = downloads.removeValue(forKey: ObjectIdentifier(download)) else { return }
+        // Mark it as downloaded from the web so Gatekeeper checks it before it can run.
+        var quarantine: [String: Any] = [kLSQuarantineTypeKey as String: kLSQuarantineTypeWebDownload, kLSQuarantineAgentNameKey as String: "Mako"]
+        if let source { quarantine[kLSQuarantineDataURLKey as String] = source }
+        do { try (file as NSURL).setResourceValue(quarantine, forKey: .quarantinePropertiesKey) }
+        catch { log.error("could not quarantine \(file.path, privacy: .public): \(error.localizedDescription, privacy: .public)") }
         log.info("downloaded \(file.path, privacy: .public)")
         // Bounces the Downloads stack in the Dock, as Safari does.
         DistributedNotificationCenter.default().post(name: .init("com.apple.DownloadFileFinished"), object: file.path)
