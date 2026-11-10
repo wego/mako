@@ -497,8 +497,11 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction) async -> WKNavigationActionPolicy {
         let url = action.request.url
         let mainFrame = action.targetFrame?.isMainFrame ?? true
-        // A download link obeys the blocklist like any other navigation.
-        if action.shouldPerformDownload { return url?.host().flatMap { Core.blockReason(host: $0) } == nil ? .download : .cancel }
+        // A download link obeys the blocklist like any other navigation, and like an
+        // unshowable response it may only come from the page itself, not an embedded frame.
+        if action.shouldPerformDownload {
+            return mainFrame && action.sourceFrame.isMainFrame && url?.host().flatMap { Core.blockReason(host: $0) } == nil ? .download : .cancel
+        }
         // A followed link opens beneath its page instead of replacing it. Jumps within the
         // same document (#section) and links in sign-in popups stay where they are. This comes
         // before the block check so a blocked link shows its notice in the new page, not over
