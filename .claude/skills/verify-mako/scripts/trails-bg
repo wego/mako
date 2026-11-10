@@ -76,6 +76,13 @@ check blocked-child-shows-notice grep -q 'block x.com: x.com is blocked' "$run/e
 check form-submit-stays-in-page sh -c "echo '$t' | grep -q '^0 Page C c.html?q=1'"
 check two-pages-only test "$(echo "$t" | wc -l | tr -d ' ')" = 2
 
+echo "== a web page cannot open local files through a link"
+stop; rm -f "$run/state/trails.json"; launch "$U/e.html"
+t=$(tree); echo "$t" >"$run/evidence/file-link.txt"; logs >"$run/evidence/file-link-log.txt"
+check file-link-opens-no-page test "$(echo "$t" | wc -l | tr -d ' ')" = 1
+check file-link-not-loaded sh -c "! grep -q 'loaded page.*\(hosts\|passwd\)' $run/evidence/file-link-log.txt && ! grep -q 'child of.*file:' $run/evidence/file-link-log.txt"
+check file-link-page-stays sh -c "echo '$t' | grep -q '^0 Page E e.html \*'"
+
 check never-took-focus test "$(front)" = "$before"
 echo "== $fails failure(s); evidence in $run/evidence"
 exit "$fails"

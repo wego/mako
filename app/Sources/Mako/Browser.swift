@@ -495,7 +495,7 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         // same document (#section) and links in sign-in popups stay where they are. This comes
         // before the block check so a blocked link shows its notice in the new page, not over
         // the page it was clicked on.
-        if action.navigationType == .linkActivated, mainFrame, let url, let parent = id(of: webView),
+        if action.navigationType == .linkActivated, mainFrame, let url, isWeb(url), let parent = id(of: webView),
            !sameDocument(url, webView.url) {
             log.info("child of \(parent) \(url.absoluteString, privacy: .public)")
             apply("open_child", ["parent": parent, "url": url.absoluteString])
@@ -515,6 +515,10 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         return .allow
     }
 
+    /// Only web links are reopened by Mako. Reopening file: or other schemes ourselves would
+    /// skip the checks WebKit applies to a page-initiated navigation.
+    private func isWeb(_ url: URL) -> Bool { ["http", "https"].contains(url.scheme?.lowercased() ?? "") }
+
     private func sameDocument(_ a: URL, _ b: URL?) -> Bool {
         func bare(_ u: URL?) -> String? { u?.absoluteString.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false).first.map(String.init) }
         return a.fragment != nil && bare(a) == bare(b)
@@ -526,7 +530,7 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
                  for action: WKNavigationAction, windowFeatures features: WKWindowFeatures) -> WKWebView? {
         guard action.navigationType != .linkActivated else {
             if let url = action.request.url {
-                if let parent = id(of: webView) {
+                if isWeb(url), let parent = id(of: webView) {
                     apply("open_child", ["parent": parent, "url": url.absoluteString])
                 } else {
                     webView.load(action.request)
