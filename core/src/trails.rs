@@ -56,7 +56,8 @@ pub enum Action {
     /// Start a new trail (a top-level page).
     OpenTrail { url: String },
     /// A link followed from `parent`: the new page goes beneath it, last.
-    OpenChild { parent: Id, url: String },
+    /// `select: false` leaves the current page active (a link opened in the background).
+    OpenChild { parent: Id, url: String, #[serde(default = "yes")] select: bool },
     /// The page in this node changed address or title in place (redirect, in-page navigation).
     Navigated { id: Id, url: String, title: String },
     Select { id: Id },
@@ -66,13 +67,28 @@ pub enum Action {
     UndoClose,
     SetCollapsed { id: Id, collapsed: bool },
     Rename { id: Id, name: Option<String> },
+    /// Move a page, with everything beneath it, next to or inside another page (drag and drop).
+    Place { id: Id, target: Id, place: Place },
+    /// Move a page one step: among its siblings, under the page above, or out beside its parent.
+    Nudge { id: Id, direction: Direction },
 }
+
+fn yes() -> bool { true }
+
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Debug)]
+#[serde(rename_all = "snake_case")]
+pub enum Place { Before, After, Inside }
+
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Debug)]
+#[serde(rename_all = "snake_case")]
+pub enum Direction { Up, Down, In, Out }
 
 #[derive(Clone, PartialEq, Debug)]
 pub enum Error {
     NoSuchPage(Id),
     TrailCap(usize),
     NothingToUndo,
+    IntoItself,
     Invalid(String),
 }
 
@@ -82,6 +98,7 @@ impl fmt::Display for Error {
             Error::NoSuchPage(id) => write!(f, "no page {id}"),
             Error::TrailCap(max) => write!(f, "trail cap reached ({max})"),
             Error::NothingToUndo => write!(f, "nothing to undo"),
+            Error::IntoItself => write!(f, "a page cannot move into itself"),
             Error::Invalid(why) => write!(f, "invalid trails state: {why}"),
         }
     }
@@ -118,11 +135,16 @@ pub fn apply(state: &Trails, action: &Action, max_trails: usize) -> Result<Trail
             let id = add(&mut s, None, url);
             s.roots.push(id);
         }
-        Action::OpenChild { parent, url } => {
+        Action::OpenChild { parent, url, select } => {
             has(&s, *parent)?;
+            let was_active = s.active;
             let id = add(&mut s, Some(*parent), url);
             s.nodes.get_mut(parent).unwrap().children.push(id);
-            reveal(&mut s, id);
+            if *select {
+                reveal(&mut s, id);
+            } else {
+                s.active = was_active;
+            }
         }
         Action::Navigated { id, url, title } => {
             let n = s.nodes.get_mut(id).ok_or(Error::NoSuchPage(*id))?;
@@ -172,6 +194,36 @@ pub fn apply(state: &Trails, action: &Action, max_trails: usize) -> Result<Trail
                 s.active = Some(*id);
             }
         }
+        Action::Place { id, target, place } => {
+            has(&s, *id)?;
+            has(&s, *target)?;
+            if subtree(&s, *id).contains(target) {
+                return Err(Error::IntoItself);
+            }
+            let parent = if *place == Place::Inside { Some(*target) } else { s.nodes[target].parent };
+            relocate(&mut s, *id, parent, max_trails, |siblings| match place {
+                Place::Inside => siblings.len(),
+                _ => siblings.iter().position(|c| c == target).unwrap() + usize::from(*place == Place::After),
+            })?;
+        }
+        Action::Nudge { id, direction } => {
+            has(&s, *id)?;
+            let parent = s.nodes[id].parent;
+            let siblings = siblings_mut(&mut s, parent).clone();
+            let at = siblings.iter().position(|c| c == id).unwrap();
+            match direction {
+                Direction::Up if at > 0 => relocate(&mut s, *id, parent, max_trails, |_| at - 1)?,
+                Direction::Down if at + 1 < siblings.len() => relocate(&mut s, *id, parent, max_trails, |_| at + 1)?,
+                Direction::In if at > 0 => relocate(&mut s, *id, Some(siblings[at - 1]), max_trails, |c| c.len())?,
+                Direction::Out => {
+                    if let Some(p) = parent {
+                        let grandparent = s.nodes[&p].parent;
+                        relocate(&mut s, *id, grandparent, max_trails, |c| c.iter().position(|x| *x == p).unwrap() + 1)?;
+                    }
+                }
+                _ => {} // already at the edge: nothing to do
+            }
+        }
         Action::Rename { id, name } => {
             s.nodes.get_mut(id).ok_or(Error::NoSuchPage(*id))?.name = name.clone().filter(|n| !n.trim().is_empty());
         }
@@ -185,6 +237,25 @@ fn add(s: &mut Trails, parent: Option<Id>, url: &str) -> Id {
     s.nodes.insert(id, Node { id, parent, children: vec![], url: url.into(), title: String::new(), name: None, collapsed: false });
     s.active = Some(id);
     id
+}
+
+/// Moves `id`, with its subtree, under `parent` (None = a trail of its own) at the index
+/// `at` picks from the new siblings once `id` has left its old place.
+fn relocate(s: &mut Trails, id: Id, parent: Option<Id>, max_trails: usize, at: impl FnOnce(&Vec<Id>) -> usize) -> Result<(), Error> {
+    let old = s.nodes[&id].parent;
+    if parent.is_none() && old.is_some() && s.roots.len() >= max_trails {
+        return Err(Error::TrailCap(max_trails));
+    }
+    siblings_mut(s, old).retain(|c| *c != id);
+    let siblings = siblings_mut(s, parent);
+    let index = at(siblings).min(siblings.len());
+    siblings.insert(index, id);
+    s.nodes.get_mut(&id).unwrap().parent = parent;
+    // Keep the active page visible wherever it ended up.
+    if let Some(active) = s.active {
+        reveal(s, active);
+    }
+    Ok(())
 }
 
 /// Expands every page above `id` so its row is visible.
@@ -281,7 +352,7 @@ mod tests {
         actions.iter().fold(state.clone(), |s, a| apply(&s, a, DEFAULT_MAX_TRAILS).unwrap())
     }
     fn trail(url: &str) -> Action { Action::OpenTrail { url: url.into() } }
-    fn child(parent: Id, url: &str) -> Action { Action::OpenChild { parent, url: url.into() } }
+    fn child(parent: Id, url: &str) -> Action { Action::OpenChild { parent, url: url.into(), select: true } }
     fn shape(s: &Trails) -> Vec<(usize, String)> { rows(s).into_iter().map(|r| (r.depth, r.url)).collect() }
 
     /// a(1) > [b(2) > [d(4)], c(3)], e(5)
@@ -410,6 +481,68 @@ mod tests {
         let s = run(&s, &[Action::Rename { id: 3, name: None }]);
         assert_eq!(rows(&s).into_iter().find(|r| r.id == 3).unwrap().label, "See");
         assert_eq!(rows(&sample())[0].label, "a", "no title yet: the address");
+    }
+
+    fn place(id: Id, target: Id, place: Place) -> Action { Action::Place { id, target, place } }
+    fn nudge(id: Id, direction: Direction) -> Action { Action::Nudge { id, direction } }
+
+    #[test]
+    fn a_page_can_be_dropped_before_after_or_inside_another() {
+        // sample: a(1) > [b(2) > [d(4)], c(3)], e(5)
+        let s = run(&sample(), &[place(3, 2, Place::Before)]);
+        assert_eq!(shape(&s), [(0, "a".into()), (1, "c".into()), (1, "b".into()), (2, "d".into()), (0, "e".into())]);
+        let s = run(&sample(), &[place(2, 3, Place::After)]);
+        assert_eq!(shape(&s), [(0, "a".into()), (1, "c".into()), (1, "b".into()), (2, "d".into()), (0, "e".into())], "subtree moves along");
+        let s = run(&sample(), &[place(2, 5, Place::Inside)]);
+        assert_eq!(shape(&s), [(0, "a".into()), (1, "c".into()), (0, "e".into()), (1, "b".into()), (2, "d".into())]);
+        assert_eq!(s.nodes[&2].parent, Some(5));
+        // a whole trail can become a page of another trail, freeing a trail slot
+        let s = run(&sample(), &[place(5, 4, Place::Inside)]);
+        assert_eq!((s.roots.clone(), s.nodes[&5].parent), (vec![1], Some(4)));
+        assert_eq!(load(&save(&s)).unwrap(), s, "still a well-formed tree");
+    }
+
+    #[test]
+    fn moves_that_would_break_the_tree_are_refused() {
+        let s = sample();
+        assert_eq!(apply(&s, &place(1, 4, Place::Inside), 2), Err(Error::IntoItself), "under its own descendant");
+        assert_eq!(apply(&s, &place(2, 2, Place::Before), 2), Err(Error::IntoItself));
+        assert_eq!(apply(&s, &place(3, 5, Place::Before), 2), Err(Error::TrailCap(2)), "a third trail");
+        assert!(apply(&s, &place(5, 1, Place::Before), 2).is_ok(), "reordering trails is not a new trail");
+        assert_eq!(apply(&s, &place(9, 1, Place::Inside), 2), Err(Error::NoSuchPage(9)));
+        assert_eq!(apply(&s, &place(1, 9, Place::Inside), 2), Err(Error::NoSuchPage(9)));
+    }
+
+    #[test]
+    fn moving_into_a_collapsed_page_keeps_the_active_page_visible() {
+        let s = run(&sample(), &[Action::SetCollapsed { id: 5, collapsed: true }, Action::Select { id: 4 }, place(4, 5, Place::Inside)]);
+        assert!(rows(&s).iter().any(|r| r.active) && !s.nodes[&5].collapsed);
+    }
+
+    #[test]
+    fn nudge_reorders_indents_and_outdents() {
+        // a(1) > [b(2) > [d(4)], c(3)], e(5)
+        let s = run(&sample(), &[nudge(3, Direction::Up)]);
+        assert_eq!(s.nodes[&1].children, [3, 2]);
+        let s = run(&s, &[nudge(3, Direction::Down)]);
+        assert_eq!(s, sample_with_active(&s));
+        assert_eq!(run(&sample(), &[nudge(3, Direction::Down)]).nodes[&1].children, [2, 3], "already last: unchanged");
+        let s = run(&sample(), &[nudge(3, Direction::In)]);
+        assert_eq!(s.nodes[&2].children, [4, 3], "indent: last child of the page above");
+        assert_eq!(run(&sample(), &[nudge(2, Direction::In)]).nodes[&1].children, [2, 3], "no page above: unchanged");
+        let s = run(&sample(), &[nudge(4, Direction::Out)]);
+        assert_eq!(s.nodes[&1].children, [2, 4, 3], "outdent: right after its old parent");
+        assert_eq!(apply(&sample(), &nudge(2, Direction::Out), 2), Err(Error::TrailCap(2)), "outdent to a third trail");
+        assert_eq!(run(&sample(), &[nudge(5, Direction::Up)]).roots, [5, 1], "trails reorder too");
+    }
+    fn sample_with_active(s: &Trails) -> Trails { Trails { active: s.active, ..sample() } }
+
+    #[test]
+    fn a_link_can_open_in_the_background() {
+        let s = run(&sample(), &[Action::Select { id: 1 }, Action::OpenChild { parent: 1, url: "bg".into(), select: false }]);
+        assert_eq!((s.active, s.nodes[&1].children.last().copied()), (Some(1), Some(6)));
+        let a: Action = serde_json::from_str(r#"{"type":"open_child","parent":1,"url":"u","select":false}"#).unwrap();
+        assert_eq!(a, Action::OpenChild { parent: 1, url: "u".into(), select: false });
     }
 
     #[test]
