@@ -7,23 +7,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_: Notification) {
         Core.ensureConfig()
-        browser = Browser(restoring: Core.loadSession())
+        browser = Browser()
         NSApp.mainMenu = makeMenu()
         CommandLine.arguments.dropFirst().compactMap(URL.init(string:)).filter { $0.scheme != nil }.forEach(browser.open)
         pending.forEach(browser.open)
-        NSApp.activate()
+        if !Browser.background { NSApp.activate() }
         Perf.interactiveAfterLaunch()
     }
 
     func application(_: NSApplication, open urls: [URL]) {
         guard let browser else { return pending += urls }
         urls.forEach(browser.open)
-        browser.window.makeKeyAndOrderFront(nil)
+        if !Browser.background { browser.window.makeKeyAndOrderFront(nil) }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_: NSApplication) -> Bool { true }
 
-    func applicationWillTerminate(_: Notification) { Core.save(browser.session) }
+    /// Trails are saved on every change; with restore off, nothing is kept for next time.
+    func applicationWillTerminate(_: Notification) {
+        if !Core.restoreSession { try? FileManager.default.removeItem(at: TrailStore.fileURL) }
+    }
 
     private func makeMenu() -> NSMenu {
         func menu(_ title: String, _ items: [NSMenuItem]) -> NSMenuItem {
@@ -32,15 +35,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             items.forEach(item.submenu!.addItem)
             return item
         }
-        func item(_ title: String, _ action: Selector, _ key: String, _ mods: NSEvent.ModifierFlags = .command, tag: Int = 0) -> NSMenuItem {
+        func item(_ title: String, _ action: Selector, _ key: String, _ mods: NSEvent.ModifierFlags = .command) -> NSMenuItem {
             let i = NSMenuItem(title: title, action: action, keyEquivalent: key)
             i.keyEquivalentModifierMask = mods
-            i.tag = tag
+            // Browser's own actions name it as target, so they work (and accessibility
+            // clients can press them) even when Mako is not the frontmost app.
+            if browser.responds(to: action) { i.target = browser }
             return i
         }
         let main = NSMenu()
-        let tabs = NSMenuItem(title: "Tabs", action: nil, keyEquivalent: "")
-        tabs.submenu = browser.tabsMenu
+        let trails = NSMenuItem(title: "Trails", action: nil, keyEquivalent: "")
+        trails.submenu = browser.trailsMenu
         [
             menu("Mako", [
                 item("About Mako", #selector(NSApplication.orderFrontStandardAboutPanel(_:)), ""),
@@ -51,9 +56,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 item("Quit Mako", #selector(NSApplication.terminate), "q"),
             ]),
             menu("File", [
-                item("New Tab", #selector(Browser.newTabAction), "t"),
+                item("New Trail", #selector(Browser.newTrail), "t"),
+                item("New Page in Trail", #selector(Browser.newPage), "t", [.command, .option]),
                 item("Open Location…", #selector(Browser.openLocation), "l"),
-                item("Close Tab", #selector(Browser.closeTab), "w"),
+                .separator(),
+                item("Close Page", #selector(Browser.closePage), "w"),
+                item("Reopen Closed Page", #selector(Browser.reopenClosedPage), "t", [.command, .shift]),
             ]),
             menu("Edit", [
                 item("Undo", Selector(("undo:")), "z"),
@@ -78,7 +86,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 item("Back", #selector(Browser.back), "["),
                 item("Forward", #selector(Browser.forward), "]"),
             ]),
-            tabs,
+            trails,
         ].forEach(main.addItem)
         return main
     }

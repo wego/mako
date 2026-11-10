@@ -62,7 +62,7 @@ Every command is `makoctl <pid> <command> [args]`. Commands that send input (`ke
 
 | Command | Output |
 | --- | --- |
-| `makoctl <pid> title` | The window's AX title: page label + ` – <tab>/<tabs>`, e.g. `Example Domain – 1/3`. Page label is the page title, else the host, else `New Tab`. |
+| `makoctl <pid> title` | The window's AX title: the active page's label (its name, else its title, else its address), or `Mako` when no page is open. |
 | `makoctl <pid> wait-title <substring> [seconds]` | Polls every 50 ms until the title contains the substring (default 10 s). Prints the title; exit 5 on timeout. The standard way to wait for a page load or tab change. |
 | `makoctl <pid> tree [depth] [--menus]` | The AX tree, one element per line: role, subrole, `id=`, `title=`, `desc=`, `value=`. Default depth 12. Web page content appears under `AXWebArea`. `--menus` includes the menu bar. |
 | `makoctl <pid> value <ax-identifier>` | The `AXValue` of the element with that identifier, e.g. the omnibox text. Exit 4 if absent. |
@@ -80,6 +80,9 @@ Every command is `makoctl <pid> <command> [args]`. Commands that send input (`ke
 | `makoctl <pid> key <combo>` | Presses a key. Modifiers `cmd`, `shift`, `opt` joined with `+`. Keys: `return`, `escape`, `tab`, `a`, `c`, `t`, `v`, `w`, `x`, `l`, `r`, `z`, `[`, `]`, `0`–`9`, `=`, `-`, `,`. Examples: `cmd+t`, `cmd+opt+c`, `escape`. Exit 64 for a key not in the table; add it to `keyCodes` in `makoctl.swift`. |
 | `makoctl <pid> type <text>` | Types text into whatever has focus: the omnibox after `key cmd+l`, a web form field, the developer console. Any Unicode text works. |
 | `makoctl <pid> menu <Menu> <Item>` | Presses a menu item by its exact titles, e.g. `menu File "New Tab"`, `menu Tabs "Example Domain"`, `menu View "Developer Console"`. Does not open the menu (an open menu would swallow later keys). |
+| `makoctl <pid> press-id <ax-identifier>` | Presses the element with that identifier, e.g. a sidebar row: `press-id mako.trail.3`. Works with Mako in the background. |
+| `makoctl <pid> set <ax-identifier> <text>` | Sets an element's value without typing: `set mako.omnibox.field example.com`. Works in the background. |
+| `makoctl <pid> confirm <ax-identifier>` | Presses Enter on a text field through AX: `confirm mako.omnibox.field` loads what the omnibox holds. Works in the background. |
 | `makoctl <pid> press <name>` | Presses the first control whose title, description, or value equals `name`: web page buttons and links (`press "Continue with Google"`), as well as native controls. |
 
 ### Measuring
@@ -110,14 +113,17 @@ Stable identifiers Mako sets for automation. Prefer these, menu titles, and the 
 | Identifier | Element |
 | --- | --- |
 | `mako.page` | Container for the active tab's page. |
-| `mako.tab.<n>` | Each tab's web view, 1-based in tab order. Its `AXWebArea` child holds the page content. |
+| `mako.sidebar` | The trails sidebar. |
+| `mako.trail.<id>` | A sidebar row (a page). `id` is the page's permanent id, not a position. Its AX value is `selected` on the active page. |
+| `mako.trail.<id>.toggle` | That row's collapse/expand control (only when it has pages beneath it). |
+| `mako.trail.<id>.page` | A loaded page's web view. Only recently shown pages are loaded. |
 | `mako.omnibox` | The address bar panel (present while hidden). |
 | `mako.omnibox.field` | Its text field; `value` is the text in it. |
-| `mako.omnibox.status` | The line under the field: tab list, `n/max tabs`, tab-cap and config-error messages. |
-| `mako.blank` | The app icon shown on a blank tab. |
+| `mako.omnibox.status` | The lines under the field: errors, what Enter will do, and the trail and page counts. |
+| `mako.blank` | The app icon shown when no page is open. |
 | `mako.popup` | A sign-in popup window. |
 
-Menu bar: `Mako` (About Mako, Settings…, Hide, Quit), `File` (New Tab, Open Location…, Close Tab), `Edit`, `View` (Reload, Zoom In/Out, Actual Size, Developer Console), `History` (Back, Forward), `Tabs` (one item per open tab).
+Menu bar: `Mako` (About Mako, Settings…, Hide, Quit), `File` (New Trail, New Page in Trail, Open Location…, Close Page, Reopen Closed Page), `Edit`, `View` (Reload, Zoom In/Out, Actual Size, Developer Console), `History` (Back, Forward), `Trails` (Next Page, Previous Page, then one item per visible page, indented by depth, the active one checked).
 
 ## Recipes
 
@@ -128,18 +134,20 @@ $M $P key cmd+l; $M $P type "https://example.com"; $M $P key return
 $M $P wait-title "Example Domain"
 ```
 
-Open a URL in a new tab:
+Start a new trail (⌘T), or open a page beneath the current one (⌥⌘T):
 
 ```sh
 $M $P key cmd+t; $M $P type "news.ycombinator.com"; $M $P key return
 $M $P wait-title "Hacker News"
+# background equivalent:
+$M $P menu File "New Trail"; $M $P set mako.omnibox.field news.ycombinator.com; $M $P confirm mako.omnibox.field
 ```
 
-List tabs and switch to one by name:
+List pages and switch to one:
 
 ```sh
-$M $P menu-items Tabs
-$M $P menu Tabs "Hacker News"
+$M $P menu-items Trails
+$M $P menu Trails "Hacker News"     # or: $M $P press-id mako.trail.3
 ```
 
 Read the visible text of the current page:
@@ -175,8 +183,19 @@ Watch Mako's own decisions (navigation allowed or blocked, popups, page loads):
 log stream --level info --predicate 'subsystem == "com.wego.mako"' --style compact
 ```
 
+## Running while the Mac is in use
+
+Set `MAKO_BACKGROUND=1` for both tools. `control-mako launch` then starts the test copy behind every other window and Mako never activates itself; `makoctl` refuses `key`, `type` and `time-key` (they need focus) and everything else works through AX: `menu`, `press`, `press-id`, `set`, `confirm`, and all the read commands. Mako's own menu items name the browser as their target, so they work while it is in the background.
+
+`scripts/trails-bg` goes further and needs no permissions at all: fixture pages click their own links and the script reads the saved `trails.json` and Mako's log.
+
+## Trails state on disk
+
+`trails.json` sits beside the config (`verify-runs/<run>/state/trails.json` for test runs). It is the core's whole state: `roots`, `nodes` (each with `parent`, `children`, `url`, `title`), `active`, and `closed` (the Undo Close stack). It is rewritten after every change, so reading it is the most direct way to assert the tree.
+
 ## Verification and performance
 
+- `scripts/trails-bg`: trails behaviour (links nest, restart restore, lazy loading, trail cap, blocked links, form submits) with no focus and no permissions. 15 checks.
 - `scripts/smoke`: every feature recipe in `.claude/skills/verify-mako/features/`, then `perf`. One `PASS`/`FAIL` line per check; exit status is the number of failures. Takes focus for about 3 minutes.
 - `scripts/perf`: performance budgets (launch, new tab, tab switch, memory, bundle size, Rust core). See the top of the script for the numbers.
 - `scripts/ab <base-checkout> <candidate-checkout> [rounds]`: paired A/B of in-app latency (launch, new tab, tab switch) between two built checkouts, interleaving launches so background load hits both alike. Prints medians, the median paired delta, and how often the candidate won. Use it to decide whether a change is faster; a single `perf` run is too noisy on a busy Mac.

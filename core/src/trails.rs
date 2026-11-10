@@ -94,6 +94,7 @@ pub struct Row {
     pub depth: usize,
     pub label: String,
     pub url: String,
+    pub title: String,
     pub active: bool,
     pub collapsed: bool,
     pub has_children: bool,
@@ -120,9 +121,8 @@ pub fn apply(state: &Trails, action: &Action, max_trails: usize) -> Result<Trail
         Action::OpenChild { parent, url } => {
             has(&s, *parent)?;
             let id = add(&mut s, Some(*parent), url);
-            let p = s.nodes.get_mut(parent).unwrap();
-            p.children.push(id);
-            p.collapsed = false;
+            s.nodes.get_mut(parent).unwrap().children.push(id);
+            reveal(&mut s, id);
         }
         Action::Navigated { id, url, title } => {
             let n = s.nodes.get_mut(id).ok_or(Error::NoSuchPage(*id))?;
@@ -132,6 +132,7 @@ pub fn apply(state: &Trails, action: &Action, max_trails: usize) -> Result<Trail
         Action::Select { id } => {
             has(&s, *id)?;
             s.active = Some(*id);
+            reveal(&mut s, *id);
         }
         Action::Close { id } => {
             has(&s, *id)?;
@@ -161,13 +162,15 @@ pub fn apply(state: &Trails, action: &Action, max_trails: usize) -> Result<Trail
             s.nodes.extend(nodes.into_iter().map(|n| (n.id, n)));
             let siblings = siblings_mut(&mut s, parent);
             siblings.insert(index.min(siblings.len()), root);
-            if let Some(p) = parent {
-                s.nodes.get_mut(&p).unwrap().collapsed = false;
-            }
             s.active = Some(root);
+            reveal(&mut s, root);
         }
         Action::SetCollapsed { id, collapsed } => {
             s.nodes.get_mut(id).ok_or(Error::NoSuchPage(*id))?.collapsed = *collapsed;
+            // The active page must stay visible: collapsing above it moves to the collapsed page.
+            if *collapsed && s.active.is_some_and(|a| a != *id && subtree(&s, *id).contains(&a)) {
+                s.active = Some(*id);
+            }
         }
         Action::Rename { id, name } => {
             s.nodes.get_mut(id).ok_or(Error::NoSuchPage(*id))?.name = name.clone().filter(|n| !n.trim().is_empty());
@@ -182,6 +185,16 @@ fn add(s: &mut Trails, parent: Option<Id>, url: &str) -> Id {
     s.nodes.insert(id, Node { id, parent, children: vec![], url: url.into(), title: String::new(), name: None, collapsed: false });
     s.active = Some(id);
     id
+}
+
+/// Expands every page above `id` so its row is visible.
+fn reveal(s: &mut Trails, id: Id) {
+    let mut up = s.nodes[&id].parent;
+    while let Some(p) = up {
+        let n = s.nodes.get_mut(&p).unwrap();
+        n.collapsed = false;
+        up = n.parent;
+    }
 }
 
 fn siblings_mut(s: &mut Trails, parent: Option<Id>) -> &mut Vec<Id> {
@@ -208,7 +221,7 @@ pub fn rows(state: &Trails) -> Vec<Row> {
         let n = &s.nodes[&id];
         let label = n.name.as_deref().or(Some(n.title.as_str()).filter(|t| !t.is_empty())).unwrap_or(&n.url);
         out.push(Row {
-            id, depth, label: label.into(), url: n.url.clone(), active: s.active == Some(id),
+            id, depth, label: label.into(), url: n.url.clone(), title: n.title.clone(), active: s.active == Some(id),
             collapsed: n.collapsed, has_children: !n.children.is_empty(),
         });
         if !n.collapsed {
@@ -372,10 +385,26 @@ mod tests {
     }
 
     #[test]
+    fn the_active_page_is_always_a_visible_row() {
+        let visible = |s: &Trails| rows(s).iter().any(|r| r.active);
+        // collapsing above the active page moves to the collapsed page
+        let s = run(&sample(), &[Action::Select { id: 4 }, Action::SetCollapsed { id: 1, collapsed: true }]);
+        assert_eq!(s.active, Some(1));
+        // selecting, or reopening, a page inside collapsed pages expands the way to it
+        let s = run(&s, &[Action::Select { id: 4 }]);
+        assert!(visible(&s) && !s.nodes[&1].collapsed && !s.nodes[&2].collapsed);
+        let s = run(&s, &[Action::Close { id: 4 }, Action::SetCollapsed { id: 1, collapsed: true }, Action::UndoClose]);
+        assert!(visible(&s) && s.active == Some(4));
+        // collapsing elsewhere leaves the active page alone
+        let s = run(&sample(), &[Action::SetCollapsed { id: 1, collapsed: true }]);
+        assert_eq!(s.active, Some(5));
+    }
+
+    #[test]
     fn navigated_and_rename_change_the_label_not_the_shape() {
         let s = run(&sample(), &[Action::Navigated { id: 3, url: "c2".into(), title: "See".into() }]);
         let row = rows(&s).into_iter().find(|r| r.id == 3).unwrap();
-        assert_eq!((row.label.as_str(), row.url.as_str()), ("See", "c2"));
+        assert_eq!((row.label.as_str(), row.url.as_str(), row.title.as_str()), ("See", "c2", "See"));
         let s = run(&s, &[Action::Rename { id: 3, name: Some("Mine".into()) }]);
         assert_eq!(rows(&s).into_iter().find(|r| r.id == 3).unwrap().label, "Mine");
         let s = run(&s, &[Action::Rename { id: 3, name: None }]);

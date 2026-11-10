@@ -74,6 +74,16 @@ $C stop
 
 Kills only the PID this run launched and removes `$MAKO_RUN/state` and the run's website data. Evidence in `$MAKO_RUN/evidence/` survives. Run `stop` after every failed attempt too.
 
+## Trails, in the background
+
+```sh
+.claude/skills/verify-mako/scripts/trails-bg
+```
+
+Checks trails behaviour (links nest, in-place navigation, restart restore, lazy loading, trail cap, blocked links) without taking focus and without Accessibility or Screen Recording permission. Run it first after any change to navigation or the tree; it is safe while the person is using the Mac. With `MAKO_BACKGROUND=1`, `control-mako` and `makoctl` also work without focus through AX actions (see `docs/control.md`), which does need Accessibility permission.
+
+`smoke`, `perf` and `ab` below predate trails and fail until rewritten (see `features/trails.md`, Gotchas).
+
 ## Full pass
 
 ```sh

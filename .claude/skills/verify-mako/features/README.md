@@ -29,7 +29,7 @@ Each file: H1 title, one paragraph of user-visible behavior, then `Sub-features`
 ## Features
 
 - [Omnibox](./omnibox.md) covers address entry, search, and dismissal.
-- [Tabs](./tabs.md) covers new, switch, close, the tab cap, title bar, and the blank-tab icon.
+- [Trails](./trails.md) covers links opening child pages, the trail cap, select, close, Undo Close, collapse, and restore. **Start here: the other files predate trails and still say "tab".**
 - [Blocklist](./blocklist.md) covers blocked and allowed hosts and live config edits.
 - [Accessibility tree](./accessibility.md) covers the handles agents rely on.
 - [Page shortcuts](./page-shortcuts.md) covers which ⌘ keys reach web pages.

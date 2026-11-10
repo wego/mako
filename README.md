@@ -1,6 +1,6 @@
 # Mako
 
-A minimal macOS browser for focus: a few tabs, no tab bar, a blocklist.
+A minimal macOS browser for focus: two trails instead of tabs, and a blocklist. A trail is a tree of pages: every link you follow opens beneath the page it came from, in a sidebar, so you always see how you got somewhere.
 Swift/AppKit shell over WKWebView; policy and omnibox logic in a small Rust core.
 
 ## Build
@@ -13,15 +13,19 @@ Swift/AppKit shell over WKWebView; policy and omnibox logic in a small Rust core
 
 | Key | Action |
 | --- | --- |
-| ⌘L | Omnibox (also lists open tabs) |
-| ⌘T / ⌘W | New tab (refused at the cap) / close tab |
-| ⌘1–9 / Tabs menu | Switch tab (the menu lists open tabs by name) |
-| ⌘[ / ⌘] | Back / forward |
+| ⌘T | New trail (refused at the cap of 2) |
+| ⌥⌘T | New page beneath the current one |
+| ⌘L | Omnibox: load an address in the current page |
+| ⌘W / ⇧⌘T | Close page (with the pages beneath it) / reopen closed page |
+| ⌃Tab / ⌃⇧Tab | Next / previous page in the sidebar |
+| ⌘[ / ⌘] | Back / forward within a page |
 | ⌘R, ⌘= ⌘- ⌘0 | Reload, zoom |
 | ⌥⌘C | Developer console (Web Inspector) |
 | ⌘, | Edit config |
 
-Links that try to open a new window load in the current tab. Mako's own shortcuts (⌘T ⌘W ⌘L ⌘, ⌘1–9 ⌥⌘C) win over pages; every other shortcut goes to the page first, so web editors keep ⌘Z.
+Clicking a link opens it as a new page beneath the current one. Typing an address with ⌘L, submitting a form, or a redirect changes the current page in place. Only recently shown pages stay loaded; the rest reload when selected. Trails are saved after every change in `trails.json` beside the config.
+
+Mako's own shortcuts (⌘T ⌥⌘T ⇧⌘T ⌘W ⌘L ⌘, ⌥⌘C ⌃Tab) win over pages; every other shortcut goes to the page first, so web editors keep ⌘Z.
 
 ## Icon
 
@@ -59,8 +63,8 @@ The `verify-mako` skill (`.claude/skills/verify-mako/`) launches an isolated ins
 
 `~/.config/mako/config`, re-read on every navigation:
 
-    max_tabs = 3
-    restore_session = true                 # reopen last session's tabs at launch (default)
+    max_trails = 2                         # trails (top-level pages); pages within a trail are unlimited
+    restore_session = true                 # keep trails (and Undo Close) across restarts (default)
     search = https://duckduckgo.com/?q=%s
     block x.com                            # always, includes subdomains and embeds (iframes)
     block youtube.com 09:00-18:00 weekdays # days: mon-fri, sat,sun, weekends, daily

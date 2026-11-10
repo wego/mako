@@ -1,0 +1,81 @@
+#!/bin/bash
+# Checks trails behaviour without taking focus and without Accessibility or Screen
+# Recording permission: the test copy launches behind everything (MAKO_BACKGROUND=1),
+# fixture pages click their own links, and the result is read from the saved
+# trails.json and Mako's log. Safe to run while the Mac is in use.
+# Prints PASS/FAIL per check; exit status is the number of failures.
+# Cannot cover what needs a person or AX: sidebar clicks, close, undo, omnibox, visuals.
+set -u
+cd "$(dirname "$0")/../../../.."
+export MAKO_BACKGROUND=1 MAKO_RUN="$PWD/verify-runs/trails-bg"
+run=$MAKO_RUN; exe="$run/app/Mako.app/Contents/MacOS/Mako"; app="$run/app/Mako.app"
+fails=0
+pass() { echo "PASS $1"; }
+fail() { echo "FAIL $1"; fails=$((fails + 1)); }
+check() { local name=$1; shift; if "$@" >/dev/null 2>&1; then pass "$name"; else fail "$name"; fi; }
+stop() { pkill -f "$exe" 2>/dev/null; sleep 0.5; }
+front() { osascript -e 'tell application "System Events" to get name of first process whose frontmost is true' 2>/dev/null; }
+# tree: one line per page, "depth title file" with * on the active page
+tree() { python3 - "$run/state/trails.json" <<'PY'
+import json, sys
+s = json.load(open(sys.argv[1]))
+def walk(i, d):
+    n = s["nodes"][str(i)]
+    print(f"{d} {n['title'] or '-'} {n['url'].rsplit('/', 1)[-1]}{' *' if s['active'] == i else ''}")
+    for c in n["children"]: walk(c, d + 1)
+for r in s["roots"]: walk(r, 0)
+PY
+}
+logs() { log show --info --last 2m --predicate "processID == $(pgrep -f "$exe" | head -1) AND subsystem == \"com.wego.mako\"" --style compact 2>/dev/null; }
+launch() { open -n -g -a "$app" --env MAKO_CONFIG="$run/state/config" --env MAKO_BACKGROUND=1 --args "$@"; sleep "${WAIT:-5}"; }
+trap 'stop; kill $srv 2>/dev/null; wait $srv 2>/dev/null; .claude/skills/verify-mako/scripts/control-mako stop >/dev/null 2>&1' EXIT
+
+script/bundle >/dev/null || { echo "FAIL build"; exit 99; }
+stop; rm -rf "$run/state" "$run/app"; mkdir -p "$run/state" "$run/app" "$run/evidence"
+printf 'max_trails = 2\nblock x.com\n' >"$run/state/config"
+cp -R build/Mako.app "$app"
+/usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier com.wego.mako.verify.trails-bg" -c "Delete :CFBundleURLTypes" "$app/Contents/Info.plist"
+codesign --force --sign - "$app" 2>/dev/null
+port=$((20000 + RANDOM % 20000))
+python3 -m http.server "$port" --bind 127.0.0.1 -d .claude/skills/verify-mako/fixtures/trails >/dev/null 2>&1 &
+srv=$!; sleep 1
+U="http://127.0.0.1:$port"
+before=$(front)
+
+echo "== followed links nest"
+launch "$U/a.html"
+t=$(tree); echo "$t" >"$run/evidence/nest.txt"
+check link-opens-child sh -c "echo '$t' | grep -q '^1 Page B b.html'"
+check blank-target-opens-grandchild sh -c "echo '$t' | grep -q '^2 Page C c.html \*'"
+check fragment-jump-stays-in-page sh -c "echo '$t' | grep -q '^0 Page A a.html#frag'"
+check three-pages-one-trail test "$(echo "$t" | wc -l | tr -d ' ')" = 3
+
+echo "== restart restores, loading only the active page"
+cp "$run/state/trails.json" "$run/evidence/before-restart.json"
+stop; launch
+check restart-state-identical cmp -s "$run/evidence/before-restart.json" "$run/state/trails.json"
+l=$(logs)
+check restart-loads-active-page sh -c "echo '$l' | grep -q 'allow $U/c.html'"
+check restart-leaves-others-unloaded sh -c "! echo '$l' | grep -qE 'allow $U/(a|b).html'"
+
+echo "== external links: second trail, then a page in it at the cap"
+open -g -a "$app" "$U/c.html?two"; sleep 3
+t=$(tree); check external-starts-second-trail sh -c "echo '$t' | grep -q '^0 Page C c.html?two \*'"
+open -g -a "$app" "$U/c.html?three"; sleep 3
+t=$(tree); check external-at-cap-becomes-child sh -c "echo '$t' | grep -q '^1 Page C c.html?three \*'"
+logs >"$run/evidence/external-log.txt"
+check cap-refusal-logged grep -q 'open_trail refused: trail cap reached (2)' "$run/evidence/external-log.txt"
+tree >"$run/evidence/external.txt"
+
+echo "== blocked link and form submit"
+stop; rm -f "$run/state/trails.json"; launch "$U/d.html"
+t=$(tree); echo "$t" >"$run/evidence/blocked.txt"
+check blocked-link-opens-child sh -c "echo '$t' | grep -q '^1 - home \*'"
+logs >"$run/evidence/blocked-log.txt"
+check blocked-child-shows-notice grep -q 'block x.com: x.com is blocked' "$run/evidence/blocked-log.txt"
+check form-submit-stays-in-page sh -c "echo '$t' | grep -q '^0 Page C c.html?q=1'"
+check two-pages-only test "$(echo "$t" | wc -l | tr -d ' ')" = 2
+
+check never-took-focus test "$(front)" = "$before"
+echo "== $fails failure(s); evidence in $run/evidence"
+exit "$fails"

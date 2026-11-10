@@ -46,10 +46,14 @@ pub extern "C" fn mako_blocked(cfg: *const c_char, host: *const c_char, weekday:
 }
 
 /// What the shell gets back from every trails call: the new state to keep and save,
-/// plus the sidebar rows, or an error (the shell then keeps the state it had).
+/// the sidebar rows and every page id (collapsed ones included), or an error (the shell then keeps the state it had).
 fn trails_reply(result: Result<trails::Trails, trails::Error>) -> *mut c_char {
     let json = match result {
-        Ok(state) => serde_json::json!({ "rows": trails::rows(&state), "state": state }),
+        Ok(state) => serde_json::json!({
+            "rows": trails::rows(&state),
+            "pages": state.nodes.keys().collect::<Vec<_>>(),
+            "state": state,
+        }),
         Err(e) => serde_json::json!({ "error": e.to_string() }),
     };
     out(Some(json.to_string()))

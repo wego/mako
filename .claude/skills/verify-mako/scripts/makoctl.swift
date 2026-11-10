@@ -98,6 +98,9 @@ let usage = """
     makoctl <pid> press <name>             AXPress the first control whose title/desc/value is name (web buttons, links)
     makoctl <pid> text                     full visible text of the active page, one line per text run
     makoctl <pid> pointer-center           move the mouse pointer over the middle of the page (perf runs)
+    makoctl <pid> press-id <ax-identifier>   AXPress the element with that identifier (sidebar rows)
+    makoctl <pid> set <ax-identifier> <text> set an element's value (the omnibox field)
+    makoctl <pid> confirm <ax-identifier>    AXConfirm (Enter) on a text field
     makoctl <pid> windows                  one line per window (popups have id="mako.popup")
     makoctl <pid> menu-items <Menu>        list a menu's item titles (checked = active)
     makoctl <pid> key <combo>              e.g. return, escape, cmd+t, cmd+1, cmd+z
@@ -130,6 +133,11 @@ func mainWindow() -> AXUIElement {
 
 // A background app has no key window, so keys and nil-targeted menu actions go nowhere.
 func focus() {
+    // MAKO_BACKGROUND=1: never take focus. Only AX actions work then (menu, press, set, confirm).
+    if ProcessInfo.processInfo.environment["MAKO_BACKGROUND"] == "1" {
+        if ["key", "type", "time-key"].contains(args[1]) { fail("\(args[1]) needs focus; not available with MAKO_BACKGROUND=1", 9) }
+        return
+    }
     guard let running = NSRunningApplication(processIdentifier: pid), !running.isActive else { return }
     // macOS may refuse a background tool's request while the user works in another app; retry.
     let deadline = Date().addingTimeInterval(4)
@@ -188,6 +196,18 @@ case "pointer-center":
     AXValueGetValue(pos as! AXValue, .cgPoint, &p)
     AXValueGetValue(size as! AXValue, .cgSize, &sz)
     CGWarpMouseCursorPosition(CGPoint(x: p.x + sz.width / 2, y: p.y + sz.height * 0.6))
+case "press-id", "set", "confirm":
+    guard args.count > 2 else { fail(usage, 64) }
+    guard let e = find(app, id: args[2]) else { fail("no element \(args[2])", 4) }
+    let result: AXError
+    switch args[1] {
+    case "set":
+        guard args.count > 3 else { fail(usage, 64) }
+        result = AXUIElementSetAttributeValue(e, kAXValueAttribute as CFString, args[3] as CFString)
+    case "confirm": result = AXUIElementPerformAction(e, kAXConfirmAction as CFString)
+    default: result = AXUIElementPerformAction(e, kAXPressAction as CFString)
+    }
+    if result != .success { fail("\(args[1]) \(args[2]) failed: AXError \(result.rawValue)", 4) }
 case "windows":
     for w in (attr(app, kAXWindowsAttribute) as? [AXUIElement]) ?? [] { print(line(w)) }
 case "menu-items":
