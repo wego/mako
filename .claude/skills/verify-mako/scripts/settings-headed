@@ -1,0 +1,48 @@
+#!/bin/bash
+# Headed check of the Settings window: real ⌘. key press, real clicks on the stepper
+# arrows, typed input, screenshots. Takes the keyboard and pointer for about a minute,
+# so run it only when the user has handed the Mac over. Exit status = failures.
+set -u
+cd "$(dirname "$0")/../../../.."
+export MAKO_RUN="$PWD/verify-runs/settings-headed"
+unset MAKO_BACKGROUND
+C=.claude/skills/verify-mako/scripts/control-mako; M=verify-runs/.bin/makoctl
+E="$MAKO_RUN/evidence"; CF="$MAKO_RUN/state/config"
+fails=0
+pass() { echo "PASS $1"; }
+fail() { echo "FAIL $1"; fails=$((fails + 1)); }
+check() { local name=$1; shift; if "$@" >/dev/null 2>&1; then pass "$name"; else fail "$name (field=$(v) config=$(grep max_trails "$CF"))"; fi; }
+v() { $M "$P" value mako.settings.maxTrails 2>/dev/null; }
+trap '$C stop >/dev/null 2>&1' EXIT
+
+$C stop >/dev/null 2>&1
+$C build >/dev/null || { echo "FAIL build"; exit 99; }
+mkdir -p "$E"
+$C launch "" "about:blank" >/dev/null || { echo "FAIL launch"; exit 99; }
+P=$($C pid); sleep 3
+
+$M "$P" key cmd+.; sleep 0.8
+check cmd-period-opens-settings $M "$P" exists mako.settings.maxTrails
+check settings-is-key-window sh -c "$M $P windows | grep -q Settings"
+check default-is-3 test "$(v)" = 3
+$M "$P" shot "$E/settings.png" >/dev/null
+$M "$P" click-id mako.settings.maxTrails.stepper 0.5 0.25; sleep 0.4
+check up-arrow-raises test "$(v)" = 4
+check up-arrow-saves grep -qx 'max_trails = 4' "$CF"
+$M "$P" click-id mako.settings.maxTrails.stepper 0.5 0.75; sleep 0.2
+$M "$P" click-id mako.settings.maxTrails.stepper 0.5 0.75; sleep 0.4
+check down-arrow-lowers test "$(v)" = 2
+check down-arrow-saves grep -qx 'max_trails = 2' "$CF"
+for _ in 1 2 3; do $M "$P" click-id mako.settings.maxTrails.stepper 0.5 0.75; sleep 0.2; done
+check stepper-stops-at-1 test "$(v)" = 1
+$M "$P" click-id mako.settings.maxTrails; sleep 0.2
+$M "$P" key cmd+a; $M "$P" type 7; $M "$P" key return; sleep 0.4
+check typed-value-saves grep -qx 'max_trails = 7' "$CF"
+$M "$P" key cmd+a; $M "$P" type 12; $M "$P" key return; sleep 0.4
+check typed-out-of-range-refused sh -c "test \"\$($M $P value mako.settings.maxTrails)\" = 7 && grep -qx 'max_trails = 7' '$CF'"
+$M "$P" shot "$E/settings-after.png" >/dev/null
+check config-keeps-block grep -qx 'block x.com' "$CF"
+$M "$P" key cmd+w; sleep 0.5
+check cmd-w-closes-settings-only sh -c "! $M $P windows | grep -q Settings && $M $P exists mako.sidebar"
+echo "== $fails failure(s); evidence in $E"
+exit $fails

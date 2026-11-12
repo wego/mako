@@ -18,6 +18,7 @@ final class Settings: NSObject {
         field.widthAnchor.constraint(equalToConstant: 44).isActive = true
         stepper.minValue = 1
         stepper.maxValue = 9
+        stepper.valueWraps = false
         stepper.target = self
         stepper.action = #selector(stepped)
         stepper.setAccessibilityIdentifier("mako.settings.maxTrails.stepper")
