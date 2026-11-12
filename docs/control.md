@@ -118,6 +118,7 @@ Stable identifiers Mako sets for automation. Prefer these, menu titles, and the 
 | `mako.trail.<id>.toggle` | That row's collapse/expand control (only when it has pages beneath it). |
 | `mako.trail.<id>.name` | The text field that replaces a row's label while it is being renamed (Trails → Rename Page…). `set` it, then `confirm` it. |
 | `mako.divider` | The edge between sidebar and page. Its value is the sidebar width in points; `set mako.divider 300` resizes it (kept between 160 and 480). |
+| `mako.settings.maxTrails` | Settings window (⌘., or `menu Mako "Settings…"`) trail-cap field. `set` then `confirm` saves 1–9 to the config as `max_trails = N`; anything else is refused and the saved value shown again. `.stepper` is the stepper beside it. |
 | `mako.trail.<id>.page` | A loaded page's web view. Only recently shown pages are loaded. |
 | `mako.omnibox` | The address bar panel (present while hidden). |
 | `mako.omnibox.field` | Its text field; `value` is the text in it. |
@@ -125,7 +126,7 @@ Stable identifiers Mako sets for automation. Prefer these, menu titles, and the 
 | `mako.blank` | The app icon shown when no page is open. |
 | `mako.popup` | A sign-in popup window. |
 
-Menu bar: `Mako` (About Mako, Settings…, Hide, Quit), `File` (New Trail, New Page in Trail, Open Location…, Close Page, Reopen Closed Page), `Edit` (… Find…, Find Next, Find Previous), `View` (Reload, Zoom In/Out, Actual Size, Developer Console), `History` (Back, Forward), `Trails` (Next Page, Previous Page, Move Page Up, Move Page Down, Indent Page, Outdent Page, Rename Page…, then one item per visible page, indented by depth, the active one checked).
+Menu bar: `Mako` (About Mako, Settings… ⌘., Edit Config File… ⌘,, Hide, Quit), `File` (New Trail, New Page in Trail, Open Location…, Close Page, Reopen Closed Page), `Edit` (… Find…, Find Next, Find Previous), `View` (Reload, Zoom In/Out, Actual Size, Developer Console), `History` (Back, Forward), `Trails` (Next Page, Previous Page, Move Page Up, Move Page Down, Indent Page, Outdent Page, Rename Page…, then one item per visible page, indented by depth, the active one checked).
 
 ## Recipes
 

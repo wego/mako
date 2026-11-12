@@ -3,6 +3,7 @@ import AppKit
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     var browser: Browser!
+    let settings = Settings()
     private var pending: [URL] = []
 
     func applicationDidFinishLaunching(_: Notification) {
@@ -41,6 +42,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // Browser's own actions name it as target, so they work (and accessibility
             // clients can press them) even when Mako is not the frontmost app.
             if browser.responds(to: action) { i.target = browser }
+            if settings.responds(to: action) { i.target = settings }
             return i
         }
         let main = NSMenu()
@@ -50,7 +52,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             menu("Mako", [
                 item("About Mako", #selector(NSApplication.orderFrontStandardAboutPanel(_:)), ""),
                 .separator(),
-                item("Settings…", #selector(Browser.openConfig), ","),
+                item("Settings…", #selector(Settings.show(_:)), "."),
+                item("Edit Config File…", #selector(Browser.openConfig), ","),
                 .separator(),
                 item("Hide Mako", #selector(NSApplication.hide), "h"),
                 item("Quit Mako", #selector(NSApplication.terminate), "q"),

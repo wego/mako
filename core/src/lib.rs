@@ -39,11 +39,24 @@ impl Default for Config {
 
 /// Config format, one directive per line, `#` comments:
 ///   max_tabs = 3
-///   max_trails = 2
+///   max_trails = 3
 ///   restore_session = true
 ///   search = https://duckduckgo.com/?q=%s
 ///   block x.com                      # always
 ///   block youtube.com 09:00-18:00 mon-fri
+/// `text` with `key = value` set: the first line setting `key` is rewritten (its comment
+/// dropped), otherwise the line is appended. Everything else is kept as written.
+pub fn set_setting(text: &str, key: &str, value: &str) -> String {
+    let sets = |raw: &str| raw.split('#').next().unwrap().split_once('=').is_some_and(|(k, _)| k.trim() == key);
+    let line = format!("{key} = {value}");
+    let mut lines: Vec<&str> = text.lines().collect();
+    match lines.iter().position(|l| sets(l)) {
+        Some(i) => lines[i] = &line,
+        None => lines.push(&line),
+    }
+    lines.join("\n") + "\n"
+}
+
 pub fn parse_config(text: &str) -> Result<Config, String> {
     let mut cfg = Config::default();
     for (i, raw) in text.lines().enumerate() {
@@ -223,7 +236,7 @@ mod tests {
         let c = cfg("# focus\nmax_tabs = 2\nsearch = https://d.com/?q=%s\nblock *.X.com\nblock yt.com 09:00-18:00 mon-fri # work\n");
         assert_eq!(c.max_tabs, 2);
         assert!(c.restore_session);
-        assert_eq!((c.max_trails, cfg("max_trails = 4").max_trails), (2, 4));
+        assert_eq!((c.max_trails, cfg("max_trails = 4").max_trails), (3, 4));
         assert!(!cfg("restore_session = false").restore_session);
         assert_eq!(c.search, "https://d.com/?q=%s");
         assert_eq!(c.blocks[0], Block { domain: "x.com".into(), window: None });
@@ -270,5 +283,15 @@ mod tests {
         let per_call = start.elapsed() / 1_000;
         assert!(per_call < std::time::Duration::from_micros(200), "parse+check took {per_call:?} per navigation (budget 200µs)");
         println!("parse+check: {per_call:?} per navigation with 500 block rules");
+    }
+
+    #[test]
+    fn set_setting_rewrites_or_appends() {
+        let text = "# Mako config\nmax_trails = 3   # cap\nblock x.com\n";
+        assert_eq!(set_setting(text, "max_trails", "5"), "# Mako config\nmax_trails = 5\nblock x.com\n");
+        assert_eq!(set_setting("block x.com", "max_trails", "2"), "block x.com\nmax_trails = 2\n");
+        assert_eq!(set_setting("", "max_trails", "2"), "max_trails = 2\n");
+        assert_eq!(set_setting("# max_trails = 9\n", "max_trails", "2"), "# max_trails = 9\nmax_trails = 2\n", "comments are not settings");
+        assert_eq!(cfg(&set_setting(text, "max_trails", "7")).max_trails, 7);
     }
 }

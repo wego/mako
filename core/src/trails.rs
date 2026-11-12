@@ -12,7 +12,7 @@ use std::fmt;
 pub type Id = u64;
 
 pub const VERSION: u32 = 1;
-pub const DEFAULT_MAX_TRAILS: usize = 2;
+pub const DEFAULT_MAX_TRAILS: usize = 3;
 /// Closed subtrees kept for Undo Close.
 pub const MAX_CLOSED: usize = 20;
 

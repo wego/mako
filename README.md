@@ -22,11 +22,12 @@ Swift/AppKit shell over WKWebView; policy and omnibox logic in a small Rust core
 | ⌘[ / ⌘] | Back / forward within a page |
 | ⌘R, ⌘= ⌘- ⌘0 | Reload, zoom |
 | ⌥⌘C | Developer console (Web Inspector) |
+| ⌘. | Settings (trail cap) |
 | ⌘, | Edit config |
 
 Clicking a link opens it as a new page beneath the current one; ⌘-click opens it there without leaving the page you are on. Drag a page in the sidebar onto another to move it (with everything beneath it) before, after or inside that page, or use Trails → Move Page Up / Down, Indent, Outdent. Double-click a page to rename it. Drag the sidebar's edge to resize it. Files a page cannot show are saved to Downloads. Typing an address with ⌘L, submitting a form, or a redirect changes the current page in place. Only recently shown pages stay loaded; the rest reload when selected. Trails are saved after every change in `trails.json` beside the config.
 
-Mako's own shortcuts (⌘T ⌥⌘T ⇧⌘T ⌘W ⌘L ⌘, ⌥⌘C ⌃Tab) win over pages; every other shortcut goes to the page first, so web editors keep ⌘Z.
+Mako's own shortcuts (⌘T ⌥⌘T ⇧⌘T ⌘W ⌘L ⌘. ⌘, ⌥⌘C ⌃Tab) win over pages; every other shortcut goes to the page first, so web editors keep ⌘Z.
 
 ## Icon
 
@@ -64,7 +65,7 @@ The `verify-mako` skill (`.claude/skills/verify-mako/`) launches an isolated ins
 
 `~/.config/mako/config`, re-read on every navigation:
 
-    max_trails = 2                         # trails (top-level pages); pages within a trail are unlimited
+    max_trails = 3                         # trails (top-level pages); pages within a trail are unlimited
     restore_session = true                 # keep trails (and Undo Close) across restarts (default)
     search = https://duckduckgo.com/?q=%s
     block x.com                            # always, includes subdomains and embeds (iframes)

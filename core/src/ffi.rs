@@ -2,7 +2,7 @@
 //! re-parsed; it is a few lines, so this costs microseconds.
 //! Returned strings are owned by the caller and must go back via `mako_free`.
 
-use crate::{blocked, parse_config, resolve, trails, Config};
+use crate::{blocked, parse_config, resolve, set_setting, trails, Config};
 use std::ffi::{c_char, CStr, CString};
 
 unsafe fn text<'a>(p: *const c_char) -> &'a str {
@@ -31,6 +31,17 @@ pub extern "C" fn mako_restore_session(cfg: *const c_char) -> bool {
 #[no_mangle]
 pub extern "C" fn mako_max_tabs(cfg: *const c_char) -> u32 {
     config(cfg).max_tabs as u32
+}
+
+#[no_mangle]
+pub extern "C" fn mako_max_trails(cfg: *const c_char) -> u32 {
+    config(cfg).max_trails as u32
+}
+
+/// Config text with `key = value` set; the shell writes it back to the file.
+#[no_mangle]
+pub extern "C" fn mako_set_setting(cfg: *const c_char, key: *const c_char, value: *const c_char) -> *mut c_char {
+    out(Some(unsafe { set_setting(text(cfg), text(key), text(value)) }))
 }
 
 /// URL for omnibox input, or NULL for empty input.

@@ -9,7 +9,7 @@ enum Core {
 
     static let template = """
         # Mako config – edits apply on the next navigation.
-        max_trails = 2
+        max_trails = 3
         # restore_session = false   # start empty instead of reopening your trails
         # search = https://duckduckgo.com/?q=%s
 
@@ -35,6 +35,13 @@ enum Core {
 
     static var configError: String? { take(mako_config_error(config)) }
     static var restoreSession: Bool { mako_restore_session(config) }
+    static var maxTrails: Int { Int(mako_max_trails(config)) }
+
+    /// Rewrites one `key = value` line of the config file, keeping the rest as the user wrote it.
+    static func set(_ key: String, _ value: String) {
+        guard let text = take(mako_set_setting(config, key, value)) else { return }
+        try? text.write(to: configURL, atomically: true, encoding: .utf8)
+    }
 
     /// One trails call into the core. The reply is JSON: new state, rows and page ids, or an error.
     static func trails(state: String?, action: String?) -> [String: Any] {

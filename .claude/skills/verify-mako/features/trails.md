@@ -1,6 +1,6 @@
 # Trails
 
-Trails replace tabs. A trail is a tree of pages in the sidebar: a followed link opens as a new page beneath the page it came from. Up to `max_trails` (default 2) trails exist at once; pages within a trail are unlimited. Trails, and the stack of closed pages, are saved after every change and come back at launch.
+Trails replace tabs. A trail is a tree of pages in the sidebar: a followed link opens as a new page beneath the page it came from. Up to `max_trails` (default 3, set in Settings, ⌘.) trails exist at once; pages within a trail are unlimited. Trails, and the stack of closed pages, are saved after every change and come back at launch.
 
 ## Sub-features
 

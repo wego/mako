@@ -54,7 +54,7 @@ let log = Logger(subsystem: "com.wego.mako", category: "browser")
 final class MenuFirstWindow: NSWindow {
     private static let owned: [(NSEvent.ModifierFlags, String)] = [
         (.command, "t"), ([.command, .option], "t"), ([.command, .shift], "t"),
-        (.command, "w"), (.command, "l"), (.command, ","), ([.command, .option], "c"),
+        (.command, "w"), (.command, "l"), (.command, ","), (.command, "."), ([.command, .option], "c"),
     ]
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
