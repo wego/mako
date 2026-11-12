@@ -13,7 +13,7 @@ Swift/AppKit shell over WKWebView; policy and omnibox logic in a small Rust core
 
 | Key | Action |
 | --- | --- |
-| ⌘T | New trail (refused at the cap of 2) |
+| ⌘T | New trail (refused at the cap; default 3, set in Settings) |
 | ⌥⌘T | New page beneath the current one |
 | ⌘L | Omnibox: load an address in the current page |
 | ⌘W / ⇧⌘T | Close page (with the pages beneath it) / reopen closed page |
