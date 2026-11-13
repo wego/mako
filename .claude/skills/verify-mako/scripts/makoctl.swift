@@ -170,7 +170,7 @@ case "title":
 case "value", "exists":
     guard args.count > 2 else { fail(usage, 64) }
     guard let e = find(app, id: args[2]) else { fail("no element \(args[2])", 4) }
-    if args[1] == "value" { print(str(e, kAXValueAttribute) ?? "") }
+    if args[1] == "value" { print(str(e, kAXValueAttribute) ?? (attr(e, kAXValueAttribute) as? NSNumber)?.stringValue ?? "") }
 case "menu":
     guard args.count > 3 else { fail(usage, 64) }
     AXUIElementPerformAction(menuItem(app, args[2], args[3]), kAXPressAction as CFString)
