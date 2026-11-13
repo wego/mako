@@ -16,6 +16,8 @@ extension NSColor {
     static let sidebarPaper = adaptive(NSColor(hex: 0xf1e8d6), NSColor(hex: 0x23201c))
     static let ink = adaptive(NSColor(hex: 0x2a201a), NSColor(hex: 0xece3d3))
     static let cardShadow = adaptive(NSColor(hex: 0x3c1e0a, alpha: 0.22), NSColor(hex: 0x000000, alpha: 0.45))
+    /// Terracotta: a warning that still sits on cream paper.
+    static let caution = adaptive(NSColor(hex: 0xa8502e), NSColor(hex: 0xe58d6c))
 
     /// Earthy inks that read on cream paper, each lightened for dark mode.
     private static let trailInks: [(light: UInt32, dark: UInt32)] = [
@@ -58,12 +60,17 @@ final class Sidebar: NSView {
     var onClose: (UInt64) -> Void = { _ in }
     var onPlace: (_ page: UInt64, _ target: UInt64, DropPlace) -> Void = { _, _, _ in }
     var iconFor: (TrailRow) -> NSImage? = { _ in nil }
+    var onOpenConfig: () -> Void = {}
 
     private let stack = NSStackView()
+    /// Shown only while a config line is unusable; a click opens the config file.
+    private let configNote = ConfigNote(labelWithString: "")
     /// Shown only at the trail cap: a quiet note, not an alarm.
     private let load = NSTextField(labelWithString: "")
+    /// The notes at the sidebar's foot; hidden ones take no room.
+    private let footer = NSStackView()
     private var rowsToBottom: NSLayoutConstraint!
-    private var rowsToLoad: NSLayoutConstraint!
+    private var rowsToFooter: NSLayoutConstraint!
     private var rowViews: [UInt64: RowView] = [:]
     private var generation = 0
 
@@ -90,10 +97,24 @@ final class Sidebar: NSView {
         load.toolTip = "At your trail limit – finish or close a trail to start another"
         load.setAccessibilityIdentifier("mako.sidebar.load")
         load.isHidden = true
-        load.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(load)
+        configNote.font = .systemFont(ofSize: 12)
+        configNote.textColor = .caution
+        configNote.lineBreakMode = .byTruncatingTail
+        configNote.maximumNumberOfLines = 2
+        configNote.cell?.wraps = true
+        configNote.cell?.truncatesLastVisibleLine = true
+        configNote.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        configNote.setAccessibilityIdentifier("mako.sidebar.config")
+        configNote.isHidden = true
+        configNote.onClick = { [unowned self] in onOpenConfig() }
+        footer.orientation = .vertical
+        footer.alignment = .width
+        footer.spacing = 4
+        footer.setViews([configNote, load], in: .leading)
+        footer.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(footer)
         rowsToBottom = scroll.bottomAnchor.constraint(equalTo: bottomAnchor)
-        rowsToLoad = scroll.bottomAnchor.constraint(equalTo: load.topAnchor, constant: -6)
+        rowsToFooter = scroll.bottomAnchor.constraint(equalTo: footer.topAnchor, constant: -6)
         setAccessibilityElement(true)
         setAccessibilityRole(.list)
         setAccessibilityIdentifier("mako.sidebar")
@@ -101,8 +122,9 @@ final class Sidebar: NSView {
         NSLayoutConstraint.activate([
             scroll.topAnchor.constraint(equalTo: topAnchor),
             rowsToBottom,
-            load.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 20),
-            load.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -10),
+            footer.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 20),
+            footer.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
+            footer.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -10),
             scroll.leadingAnchor.constraint(equalTo: leadingAnchor),
             scroll.trailingAnchor.constraint(equalTo: trailingAnchor),
             document.topAnchor.constraint(equalTo: scroll.contentView.topAnchor),
@@ -147,12 +169,24 @@ final class Sidebar: NSView {
 
     /// Open trails against the cap; the note shows once no new trail fits.
     func showLoad(trails: Int, max: Int) {
-        let full = trails >= max
         load.stringValue = "🧠 \(trails)/\(max)"
-        guard load.isHidden == full else { return }
-        load.isHidden = !full
-        rowsToBottom.isActive = !full
-        rowsToLoad.isActive = full
+        load.isHidden = trails < max
+        fitFooter()
+    }
+
+    /// The core's note on unusable config lines, or nil to hide it.
+    func showConfigIssue(_ issue: String?) {
+        configNote.stringValue = issue.map { "⚠ \($0)" } ?? ""
+        configNote.toolTip = issue.map { "\($0)\nClick to open the config file." }
+        configNote.isHidden = issue == nil
+        fitFooter()
+    }
+
+    private func fitFooter() {
+        let shown = footer.arrangedSubviews.contains { !$0.isHidden }
+        guard rowsToFooter.isActive != shown else { return }
+        rowsToBottom.isActive = !shown
+        rowsToFooter.isActive = shown
     }
 
     /// Icons arrive after the rows are drawn; updating in place keeps a rename in progress.
@@ -230,6 +264,17 @@ private final class CardView: NSView {
 
 final class FlippedView: NSView {
     override var isFlipped: Bool { true }
+}
+
+/// A label that acts on a click or an accessibility press.
+private final class ConfigNote: NSTextField {
+    var onClick: () -> Void = {}
+    override func mouseDown(with event: NSEvent) { onClick() }
+    override func accessibilityPerformPress() -> Bool {
+        onClick()
+        return true
+    }
+    override func resetCursorRects() { addCursorRect(bounds, cursor: .pointingHand) }
 }
 
 /// One page in the sidebar: click to show it, double-click to rename, drag to move it

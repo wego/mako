@@ -161,6 +161,7 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         sidebar.onClose = { [unowned self] in close($0) }
         sidebar.onPlace = { [unowned self] in apply("place", ["id": $0, "target": $1, "place": $2.rawValue]) }
         sidebar.iconFor = { [unowned self] in favicons.icon(for: $0.url) }
+        sidebar.onOpenConfig = { [unowned self] in openConfig(nil) }
         favicons.onChange = { [unowned self] in sidebar.refreshIcons() }
         divider.onDrag = { [unowned self] in setSidebarWidth(sidebarWidth.constant + $0) }
         divider.onSet = { [unowned self] in setSidebarWidth($0) }
@@ -243,6 +244,7 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         if !omnibox.isHidden { updateHint() }
         sidebar.update(store.rows)
         sidebar.showLoad(trails: store.rows.filter { $0.depth == 0 }.count, max: Core.maxTrails)
+        sidebar.showConfigIssue(Core.configError)
         rebuildTrailsMenu()
         if omnibox.isHidden, let view { window.makeFirstResponder(view) }
     }
