@@ -1,34 +1,45 @@
 # Blocklist
 
-Pages from hosts in the config's `block` lines (with optional time windows) do not load; Mako shows a "Not now." page instead. The check runs on every frame navigation: typed URLs, link clicks, redirects, restored tabs, URLs passed at launch, and iframes. A blocked iframe (an embedded video, say) is left empty while the page around it loads. Images and scripts fetched from a blocked domain are not frame navigations and still load. Config edits apply on the next navigation.
+Pages from hosts in the config's `block` lines do not load; the page shows a "Not now." notice with the reason instead (`x.com is blocked. Back to work.`). The check runs on every main-frame navigation: addresses entered in the omnibox, link clicks (the link still opens its child page, and the notice shows there), redirects, reloads, restored pages, and addresses passed at launch or from another app. A blocked iframe (an embedded video, say) is left empty while the page around it loads. A download from a blocked host is cancelled, and a blocked host's site icon is never fetched. Images and scripts fetched from a blocked domain are not navigations and still load. Mako reads the config on every check, so edits apply on the next navigation.
 
 ## Sub-features
 
-- `block-typed` a typed blocked host shows the block page.
-- `block-subdomain` subdomains of a blocked domain are blocked.
+- `block-typed` an address entered for a blocked host shows the notice in that page.
+- `block-subdomain` subdomains of a blocked domain are blocked; a leading `*.` in the rule, letter case and a trailing dot make no difference.
 - `block-allowed` an unlisted host loads normally.
+- `block-link` a link to a blocked host opens a child page showing the notice (`trails-bg` checks it).
 - `block-iframe` an iframe from a blocked host stays empty; the host page and other iframes load.
-- `block-live-edit` adding a `block` line takes effect without restart.
+- `block-launch` a blocked address passed at launch opens a trail showing the notice.
+- `block-window` `block <domain> HH:MM-HH:MM [days]` blocks only inside the window, which may pass midnight. Days are `mon`…`sun`, ranges (`mon-fri`), lists (`sat,sun`), `weekdays`, `weekends` or `daily`; none means every day. The reason then says `until HH:MM.` or `until midnight.`.
+- `block-live-edit` adding a `block` line takes effect on the next navigation, without a restart.
+- `block-bad-config` a config line Mako cannot parse makes the whole config fall back to the defaults, so no block rule applies, and the omnibox status's first line names it: ``config line <n>: <problem>: `<line>` ``. A leftover `max_tabs` line is ignored and `max_trails` above 9 is clamped, so neither drops the blocklist.
+- `block-download` a download link or response from a blocked host saves nothing.
+- `block-favicon` no icon request goes to a blocked host, redirects included (`trails-bg` checks it).
 
 ## How to get to it (user POV)
 
-- Type a blocked address in the omnibox.
-- Open a blocked link from another app (launch argument).
-- Edit `~/.config/mako/config` (⌘,), here the run's `MAKO_CONFIG`.
+- Enter a blocked address in the omnibox, or follow a link to one.
+- Open a blocked link from another app (a launch argument here).
+- Edit `~/.config/mako/config` (Mako → Edit Config File…, ⌘,), here the run's `MAKO_CONFIG`.
 
 ## Driving it with makoctl
 
-Preconditions: baseline (`block x.com`). Start `log stream --level info --predicate 'subsystem == "com.wego.mako"' > $E/block-log.txt &` first.
+Preconditions: baseline (`block x.com`); `MAKO_BACKGROUND=1` is fine for every step. Start `log stream --level info --predicate 'subsystem == "com.wego.mako"' --style compact > $E/block-log.txt &` first. `go() { $M $P menu File "Open Location…"; sleep 0.3; $M $P set mako.omnibox.field "$1"; $M $P confirm mako.omnibox.field; sleep 2; }` loads an address in the shown page.
 
-- **Blocked.** `$M $P key cmd+l; $M $P type x.com; $M $P key return`. `$M $P tree 8 | grep "x.com is blocked"` matches; `shot $E/block-page.png`.
-- **Subdomain.** Same with `mobile.x.com`. Same text.
-- **Allowed.** Same with `example.com`. `wait-title "Example Domain"`.
-- **Iframe.** `$M $P key cmd+l; $M $P type "data:text/html,<title>embed</title><iframe src='https://x.com/'></iframe><iframe src='https://www.iana.org/'></iframe>"; $M $P key return`. Title stays `embed`; the log shows `block x.com (frame)` and `allow https://www.iana.org/`.
-- **Live edit.** `echo 'block example.com' >> verify-runs/latest/state/config`, then `$M $P key cmd+r`. Tree shows `example.com is blocked.`
-- **Proof.** The log file shows `block x.com`, `block mobile.x.com`, `allow https://example.com/`, then `block example.com`.
+- **Blocked.** `$C launch "" https://example.com`, `wait-title "Example Domain" 8`, then `go x.com`. `$M $P text` prints `Not now.` and `x.com is blocked. Back to work.`; `shot $E/block-page.png`. The log has `block x.com: x.com is blocked.`
+- **Subdomain.** `go mobile.x.com`. Same text; the log has `block mobile.x.com: x.com is blocked.`
+- **Allowed.** `go example.com`. `wait-title "Example Domain" 8`; the log has `allow https://example.com/`.
+- **Iframe.** `go "data:text/html,<title>embed</title><p>host page</p><iframe src='https://x.com/'></iframe><iframe src='https://www.iana.org/'></iframe>"`. `wait-title embed`; the log has `block x.com (frame): x.com is blocked.` and `allow https://www.iana.org/`.
+- **Live edit.** On example.com, `echo 'block example.com' >> verify-runs/latest/state/config`, then `$M $P menu View Reload`. `text` shows `example.com is blocked.`
+- **Launch.** `$C stop; $C launch "" https://x.com`. `text` shows the notice.
+- **Time window.** `printf 'block example.com 00:00-24:00 daily\n' > $E/window.config; $C stop; $C launch $E/window.config https://example.com`. `text` shows `example.com is blocked until midnight.`
+- **Bad config line.** `$C stop; $C launch "" https://example.com`, then `echo 'blok a.com' >> verify-runs/latest/state/config` and `menu File "Open Location…"`. `value mako.omnibox.status | head -1` is ``config line 3: expected `block <domain> [HH:MM-HH:MM] [days]` or `key = value`: `blok a.com` ``. `go x.com` then loads the real x.com (`allow https://x.com/` in the log): the blocklist is gone until the line is fixed.
+- **Proof.** The log file in order, `text` after each step, `shot` of the notice.
 
 ## Gotchas
 
-- Block reasons with time windows say `until HH:MM` or `until midnight`; assert on `is blocked`.
+- Assert on the notice's text (`text`, or the log), not the window title. The notice is not an http page, so the trail keeps its last address and label: typing a blocked address over example.com leaves the row and title at `Example Domain`, and a blocked page opened as a trail or a link shows its address as its label (from source; confirm in a run).
+- Block reasons with time windows say `until HH:MM` or `until midnight`; match `is blocked`.
 - `log stream` must start before the action or the lines are missed.
-- Each block page itself logs an extra `allow about:blank`; assert on the order of the `block`/`allow https` lines, not the full log.
+- Each notice page logs an extra `allow about:blank`; assert on the order of the `block` and `allow https` lines, not the full log.
+- Mako fills in `https://` for a bare domain, so the log shows the full address.

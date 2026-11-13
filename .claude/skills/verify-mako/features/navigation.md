@@ -1,12 +1,12 @@
 # Navigation and zoom
 
-Standard page controls without toolbar buttons: back, forward, reload, and page zoom, from the History and View menus or their shortcuts. These go to the page first, so a web app that handles one of them keeps it.
+Back, forward, reload and page zoom, from the History and View menus or their shortcuts, without toolbar buttons. They act on the shown page's own history: going back changes that page in place, it never selects another page. The shortcuts go to the page first, so a web app that handles one of them keeps it. Back, Forward and Reload count as navigations the person started, which is what lifts a page's dialog silencing (`features/dialogs.md`).
 
 ## Sub-features
 
-- `nav-back-forward` ⌘[ and ⌘] move through the tab's history.
-- `nav-reload` ⌘R reloads the page.
-- `nav-zoom` ⌘=, ⌘-, ⌘0 zoom in, out, and reset, in 0.1 steps with a 0.3 floor and no ceiling; pinch also zooms.
+- `nav-back-forward` ⌘[ and ⌘] (History → Back, Forward) or a two-finger swipe move through the page's history; its sidebar row follows the page's address and title.
+- `nav-reload` ⌘R (View → Reload) reloads the page.
+- `nav-zoom` ⌘=, ⌘-, ⌘0 (View → Zoom In, Zoom Out, Actual Size) zoom in, out, and reset, in 0.1 steps with a 0.3 floor and no ceiling; pinch magnifies too. Zoom belongs to the page's web view: other pages keep their own, and it is lost when the view is unloaded (the page closed, eight other pages shown since, or a restart).
 
 ## How to get to it (user POV)
 
@@ -16,14 +16,15 @@ Standard page controls without toolbar buttons: back, forward, reload, and page 
 
 ## Driving it with makoctl
 
-Preconditions: baseline launched with `https://example.com`.
+Preconditions: baseline; `MAKO_BACKGROUND=1` is fine except for the key steps. Serve the trail fixtures (`.claude/skills/verify-mako/scripts/fixture-server $PORT &`, `U=http://127.0.0.1:$PORT`) and launch with `$C launch "" "$U/c.html"`. `go() { $M $P menu File "Open Location…"; sleep 0.3; $M $P set mako.omnibox.field "$1"; $M $P confirm mako.omnibox.field; }`.
 
-- **History.** `$M $P key cmd+l; $M $P type iana.org; $M $P key return; $M $P wait-title "Internet Assigned" 8`. `$M $P key cmd+[` then `wait-title "Example Domain"`. `$M $P key cmd+]` then `wait-title "Internet Assigned"`.
-- **Menus.** `$M $P menu History Back` then `wait-title "Example Domain"`; `$M $P menu History Forward` returns.
-- **Reload.** Run `log stream` filtered to `com.wego.mako`, then `$M $P key cmd+r`. A new `loaded tab 0/1` line appears.
-- **Zoom.** `$M $P shot $E/zoom-1.png; $M $P key cmd+=; $M $P key cmd+=; $M $P shot $E/zoom-2.png; $M $P key cmd+0`. Text in `zoom-2.png` is visibly larger than in `zoom-1.png`.
+- **History.** `go "$U/h.html"; $M $P wait-title "Page H"`. `trails.json` still holds one page, now at `h.html`. `$M $P menu History Back` then `wait-title "Page C"`; `$M $P menu History Forward` then `wait-title "Page H"`. **(focus)** `key "cmd+["` and `key "cmd+]"` do the same.
+- **Reload.** Start `log stream --level info --predicate 'subsystem == "com.wego.mako"' --style compact > $E/reload-log.txt &`, then `$M $P menu View Reload`. A new `loaded page 1: Page H` line appears. **(focus)** `key cmd+r`.
+- **Zoom.** `$M $P shot $E/zoom-1.png; $M $P menu View "Zoom In"; $M $P menu View "Zoom In"; sleep 0.8; $M $P shot $E/zoom-2.png; $M $P menu View "Actual Size"`. `cmp` says the shots differ, and the text in `zoom-2.png` is visibly larger. **(focus)** `key "cmd+="`, `key "cmd+-"`, `key cmd+0`.
+- **Proof.** Titles after each step, the log lines, both shots.
 
 ## Gotchas
 
-- Swipe gestures can't be posted with makoctl; only the menu and key entry points are drivable.
-- Zoom is per tab and isn't saved by session restore.
+- Swipe and pinch gestures can't be posted with makoctl; only the menu and key entry points are drivable.
+- Zoom is not saved with the trails.
+- In-page navigation that a page starts itself (a `#fragment` jump, a form submit, a redirect) is covered by `trails-bg`.
