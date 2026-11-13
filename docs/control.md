@@ -214,7 +214,7 @@ Set `MAKO_BACKGROUND=1` for both tools. `control-mako launch` then starts the te
 ## Verification and performance
 
 - `scripts/trails-bg`: trails behaviour (links nest, restart restore, lazy loading, trail cap, blocked links, form submits, trail colours, site icons) with no focus and no permissions. 21 checks.
-- `scripts/trails-ax`: the trails UI through accessibility actions, no focus: sidebar rows, collapse, omnibox, trail cap, close, Undo Close across a restart, moving and renaming pages, sidebar width, find in page. 36 checks. Needs Accessibility permission.
+- `scripts/trails-ax`: the trails UI through accessibility actions, no focus: sidebar rows, collapse, omnibox, trail cap, close, Undo Close across a restart, moving and renaming pages, sidebar width, find in page, ⌘1…⌘9 jumps through the Trails menu, the 🧠 note at the cap. 48 checks. Needs Accessibility permission.
 - `scripts/ux-headed`: middle-clicks on page content (`fixtures/trails/m.html`) and sidebar rows, ⌘1…⌘9 as keys, the omnibox with a long address. Takes the pointer and keyboard; needs Accessibility.
 - `scripts/smoke`: every feature recipe in `.claude/skills/verify-mako/features/`, then `perf`. One `PASS`/`FAIL` line per check; exit status is the number of failures. Takes focus for about 3 minutes.
 - `scripts/perf`: performance budgets (launch, new tab, tab switch, memory, bundle size, Rust core). See the top of the script for the numbers.
