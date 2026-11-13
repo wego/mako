@@ -3,11 +3,46 @@ import AppKit
 private let pageDragType = NSPasteboard.PasteboardType("com.wego.mako.page")
 
 extension NSColor {
-    /// Trail colours by the core's slot. System colours, so each adapts to light and dark.
+    convenience init(hex: UInt32, alpha: CGFloat = 1) {
+        self.init(srgbRed: CGFloat(hex >> 16 & 0xff) / 255, green: CGFloat(hex >> 8 & 0xff) / 255,
+                  blue: CGFloat(hex & 0xff) / 255, alpha: alpha)
+    }
+
+    /// `light` in light mode, `dark` in dark mode.
+    static func adaptive(_ light: NSColor, _ dark: NSColor) -> NSColor {
+        NSColor(name: nil) { $0.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? dark : light }
+    }
+
+    static let sidebarPaper = adaptive(NSColor(hex: 0xf1e8d6), NSColor(hex: 0x23201c))
+    static let ink = adaptive(NSColor(hex: 0x2a201a), NSColor(hex: 0xece3d3))
+    static let cardShadow = adaptive(NSColor(hex: 0x3c1e0a, alpha: 0.22), NSColor(hex: 0x000000, alpha: 0.45))
+
+    /// Earthy inks that read on cream paper, each lightened for dark mode.
+    private static let trailInks: [(light: UInt32, dark: UInt32)] = [
+        (0xb8465f, 0xe07a90), (0x2f3f8f, 0x8c9ce6), (0xd9902a, 0xebb060), (0x5f7d3b, 0x9cbd72), (0x7a4fa0, 0xb690dc),
+        (0x2f7f7a, 0x6cbfb8), (0xc2603e, 0xe58d6c), (0x4a6fa5, 0x8aaee0), (0x8a6a3a, 0xc4a274),
+    ]
+
+    /// A trail's colour by the core's slot.
     static func trail(_ slot: Int) -> NSColor {
-        let palette: [NSColor] = [.systemBlue, .systemOrange, .systemGreen, .systemPurple, .systemPink,
-                                  .systemTeal, .systemYellow, .systemIndigo, .systemBrown]
-        return palette[slot % palette.count]
+        let ink = trailInks[slot % trailInks.count]
+        return adaptive(NSColor(hex: ink.light), NSColor(hex: ink.dark))
+    }
+
+    /// A trail's card: paper with 18% of the trail's colour.
+    static func card(_ slot: Int) -> NSColor {
+        let ink = trailInks[slot % trailInks.count]
+        return adaptive(NSColor(hex: 0xfbf7ee).blended(withFraction: 0.18, of: NSColor(hex: ink.light))!,
+                     NSColor(hex: 0x2e2a25).blended(withFraction: 0.18, of: NSColor(hex: ink.dark))!)
+    }
+}
+
+extension TrailRow {
+    /// The core's flat rows split into trails: each depth-0 row starts one.
+    static func trails(_ rows: [TrailRow]) -> [[TrailRow]] {
+        rows.reduce(into: []) { trails, row in
+            if row.depth == 0 || trails.isEmpty { trails.append([row]) } else { trails[trails.count - 1].append(row) }
+        }
     }
 }
 
@@ -36,8 +71,9 @@ final class Sidebar: NSView {
         super.init(frame: .zero)
         stack.orientation = .vertical
         stack.alignment = .leading
-        stack.spacing = 1
-        stack.edgeInsets = NSEdgeInsets(top: 8, left: 6, bottom: 8, right: 6)
+        stack.spacing = 16
+        // Room on every side for the cards' shadows, which the scroll view would clip.
+        stack.edgeInsets = NSEdgeInsets(top: 12, left: 12, bottom: 18, right: 12)
         stack.translatesAutoresizingMaskIntoConstraints = false
         let document = FlippedView()
         document.translatesAutoresizingMaskIntoConstraints = false
@@ -49,8 +85,8 @@ final class Sidebar: NSView {
         scroll.documentView = document
         scroll.translatesAutoresizingMaskIntoConstraints = false
         addSubview(scroll)
-        load.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
-        load.textColor = .secondaryLabelColor
+        load.font = .systemFont(ofSize: 12)
+        load.textColor = .ink.withAlphaComponent(0.62)
         load.toolTip = "At your trail limit – finish or close a trail to start another"
         load.setAccessibilityIdentifier("mako.sidebar.load")
         load.isHidden = true
@@ -65,7 +101,7 @@ final class Sidebar: NSView {
         NSLayoutConstraint.activate([
             scroll.topAnchor.constraint(equalTo: topAnchor),
             rowsToBottom,
-            load.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
+            load.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 20),
             load.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -10),
             scroll.leadingAnchor.constraint(equalTo: leadingAnchor),
             scroll.trailingAnchor.constraint(equalTo: trailingAnchor),
@@ -81,6 +117,11 @@ final class Sidebar: NSView {
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.sidebarPaper.setFill()
+        dirtyRect.fill()
+    }
+
     func update(_ rows: [TrailRow]) {
         generation += 1
         let mine = generation
@@ -89,12 +130,16 @@ final class Sidebar: NSView {
         stack.arrangedSubviews.forEach { $0.removeFromSuperview() }
         guard mine == generation else { return }
         rowViews = [:]
-        for (i, row) in rows.enumerated() {
-            let view = RowView(row, endsTrail: rows.indices.contains(i + 1) ? rows[i + 1].depth == 0 : true, sidebar: self)
-            rowViews[row.id] = view
-            view.setIcon(iconFor(row))
-            stack.addArrangedSubview(view)
-            view.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -12).isActive = true
+        for trail in TrailRow.trails(rows) {
+            let views = trail.map { row in
+                let view = RowView(row, sidebar: self)
+                rowViews[row.id] = view
+                view.setIcon(iconFor(row))
+                return view
+            }
+            let card = CardView(views, color: trail[0].color)
+            stack.addArrangedSubview(card)
+            card.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -24).isActive = true
         }
     }
 
@@ -114,6 +159,75 @@ final class Sidebar: NSView {
     func refreshIcons() { rowViews.values.forEach { $0.setIcon(iconFor($0.row)) } }
 }
 
+/// One trail: a raised paper card in the trail's colour, its pages joined by ink branches.
+@MainActor
+private final class CardView: NSView {
+    private let rows: [RowView]
+    private let color: Int
+
+    init(_ rows: [RowView], color: Int) {
+        self.rows = rows
+        self.color = color
+        super.init(frame: .zero)
+        let stack = NSStackView(views: rows)
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 1
+        stack.edgeInsets = NSEdgeInsets(top: 5, left: 5, bottom: 5, right: 5)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: topAnchor),
+            stack.bottomAnchor.constraint(equalTo: bottomAnchor),
+            stack.leadingAnchor.constraint(equalTo: leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: trailingAnchor),
+        ] + rows.map { $0.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -10) })
+        wantsLayer = true
+        layer?.shadowOpacity = 1
+        layer?.shadowOffset = CGSize(width: 0, height: -3.5)
+        layer?.shadowRadius = 4.25
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    override func layout() {
+        super.layout()
+        guard let layer else { return }
+        layer.shadowPath = CGPath(roundedRect: bounds, cornerWidth: 6, cornerHeight: 6, transform: nil)
+        effectiveAppearance.performAsCurrentDrawingAppearance { layer.shadowColor = NSColor.cardShadow.cgColor }
+        // The dots and branches are drawn at the rows' frames, which layout just moved.
+        needsDisplay = true
+    }
+
+    override func viewDidChangeEffectiveAppearance() { needsLayout = true }
+
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.card(color).setFill()
+        NSBezierPath(roundedRect: bounds, xRadius: 6, yRadius: 6).fill()
+        let ink = NSColor.trail(color)
+        for row in rows {
+            let frame = convert(row.bounds, from: row)
+            if row.row.depth == 0 {
+                let center = NSPoint(x: frame.minX + 13, y: frame.midY)
+                ink.withAlphaComponent(0.22).setFill()
+                NSBezierPath(ovalIn: NSRect(x: center.x - 8, y: center.y - 8, width: 16, height: 16)).fill()
+                ink.setFill()
+                NSBezierPath(ovalIn: NSRect(x: center.x - 5, y: center.y - 5, width: 10, height: 10)).fill()
+            } else {
+                // Starts 6 pt up inside the page above, so the branch reads as growing out of it.
+                let x = frame.minX + 14.75 + CGFloat(row.row.depth - 1) * 16, y = frame.midY + 0.75
+                let branch = NSBezierPath()
+                branch.move(to: NSPoint(x: x, y: frame.maxY + 6))
+                branch.appendArc(from: NSPoint(x: x, y: y), to: NSPoint(x: x + 8.25, y: y), radius: 7.25)
+                branch.line(to: NSPoint(x: x + 8.25, y: y))
+                branch.lineWidth = 1.5
+                ink.withAlphaComponent(0.85).setStroke()
+                branch.stroke()
+            }
+        }
+    }
+}
+
 final class FlippedView: NSView {
     override var isFlipped: Bool { true }
 }
@@ -124,8 +238,6 @@ final class FlippedView: NSView {
 private final class RowView: NSView, NSDraggingSource, NSTextFieldDelegate {
     let row: TrailRow
     private let icon = NSImageView()
-    /// The last row of its trail: the rail's rounded bottom.
-    private let endsTrail: Bool
     private unowned let sidebar: Sidebar
     private let label: NSTextField
     private var hovered = false { didSet { needsDisplay = true } }
@@ -133,23 +245,25 @@ private final class RowView: NSView, NSDraggingSource, NSTextFieldDelegate {
     private var mouseDownAt: NSPoint?
     private var editor: NSTextField?
 
-    init(_ row: TrailRow, endsTrail: Bool, sidebar: Sidebar) {
+    init(_ row: TrailRow, sidebar: Sidebar) {
         self.row = row
-        self.endsTrail = endsTrail
         self.sidebar = sidebar
         label = NSTextField(labelWithString: row.label)
         super.init(frame: .zero)
 
         let toggle = NSButton(title: row.hasChildren ? (row.collapsed ? "▸" : "▾") : "", target: self, action: #selector(toggled))
         toggle.isBordered = false
-        // Kept in the row (not hidden) so pages without children still line up.
+        toggle.attributedTitle = NSAttributedString(string: toggle.title, attributes: [
+            .foregroundColor: NSColor.ink.withAlphaComponent(0.55), .font: NSFont.systemFont(ofSize: 11),
+        ])
+        // Kept in the row (not hidden) so every name ends at the same place.
         toggle.isEnabled = row.hasChildren
         toggle.setAccessibilityElement(row.hasChildren)
         toggle.setAccessibilityIdentifier("mako.trail.\(row.id).toggle")
         toggle.setAccessibilityLabel(row.collapsed ? "Expand" : "Collapse")
 
         label.font = .systemFont(ofSize: 13, weight: row.active ? .semibold : (row.depth == 0 ? .medium : .regular))
-        label.textColor = .labelColor
+        label.textColor = .ink
         label.lineBreakMode = .byTruncatingTail
         label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         // The row itself is the accessibility element, not its text.
@@ -162,18 +276,19 @@ private final class RowView: NSView, NSDraggingSource, NSTextFieldDelegate {
             view.translatesAutoresizingMaskIntoConstraints = false
             addSubview(view)
         }
+        // The card draws the root's dot and the branches in the space before the icon.
         NSLayoutConstraint.activate([
-            heightAnchor.constraint(equalToConstant: 26),
-            toggle.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8 + CGFloat(row.depth) * 14),
-            toggle.widthAnchor.constraint(equalToConstant: 14),
-            toggle.centerYAnchor.constraint(equalTo: centerYAnchor),
-            icon.leadingAnchor.constraint(equalTo: toggle.trailingAnchor, constant: 2),
+            heightAnchor.constraint(equalToConstant: 28),
+            icon.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 26 + CGFloat(max(row.depth - 1, 0)) * 16),
             icon.widthAnchor.constraint(equalToConstant: 16),
             icon.heightAnchor.constraint(equalToConstant: 16),
             icon.centerYAnchor.constraint(equalTo: centerYAnchor),
-            label.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 6),
-            label.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
+            label.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 8),
+            label.trailingAnchor.constraint(equalTo: toggle.leadingAnchor, constant: -2),
             label.centerYAnchor.constraint(equalTo: centerYAnchor),
+            toggle.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -4),
+            toggle.widthAnchor.constraint(equalToConstant: 14),
+            toggle.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
         toolTip = row.url
         registerForDraggedTypes([pageDragType])
@@ -211,21 +326,14 @@ private final class RowView: NSView, NSDraggingSource, NSTextFieldDelegate {
     // MARK: Looks
 
     override func draw(_ dirtyRect: NSRect) {
-        let color = NSColor.trail(row.color)
-        let shape = NSBezierPath(roundedRect: bounds, xRadius: 6, yRadius: 6)
+        let shape = NSBezierPath(roundedRect: bounds, xRadius: 4, yRadius: 4)
         if row.active {
-            color.withAlphaComponent(0.2).setFill()
+            NSColor.trail(row.color).withAlphaComponent(0.18).setFill()
             shape.fill()
         } else if hovered || drop == .inside {
-            NSColor.labelColor.withAlphaComponent(drop == .inside ? 0.16 : 0.07).setFill()
+            NSColor.ink.withAlphaComponent(drop == .inside ? 0.14 : 0.06).setFill()
             shape.fill()
         }
-        // One rail per trail down the leading edge, rounded only where the trail starts and ends.
-        // It reaches across the 1 pt gap below so consecutive rows join up.
-        let top = row.depth == 0, bottom = endsTrail
-        let rail = NSRect(x: 0, y: bottom ? 3 : -1, width: 3, height: bounds.height - (bottom ? 3 : -1) - (top ? 3 : 0))
-        color.withAlphaComponent(0.75).setFill()
-        NSBezierPath(roundedRect: rail, xRadius: top || bottom ? 1.5 : 0, yRadius: top || bottom ? 1.5 : 0).fill()
         if let drop, drop != .inside {
             NSColor.controlAccentColor.setFill()
             NSRect(x: 4, y: drop == .before ? bounds.maxY - 2 : 0, width: bounds.width - 8, height: 2).fill()
