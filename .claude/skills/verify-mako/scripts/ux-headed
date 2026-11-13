@@ -71,9 +71,9 @@ $M "$P" shot "$E/middle-click.png" >/dev/null
 echo "== middle-click on a sidebar row"
 first=$(q 'n["1"]["children"][0]')
 $M "$P" middle-click-id "mako.trail.$first"; sleep 0.8
-check row-middle-click-closes is "$first in n" False
+check row-middle-click-closes is "'$first' in n" False
 $M "$P" menu File "Reopen Closed Page"; sleep 1
-check closed-row-reopens is "$first in n" True
+check closed-row-reopens is "'$first' in n" True
 
 echo "== ⌘1 as a key"
 $M "$P" key cmd+1; sleep 0.5
