@@ -6,6 +6,7 @@ The address bar is a glass panel summoned with ⌘L. It accepts a URL, a bare do
 
 - `omni-open` opens prefilled with the current page URL, text selected.
 - `omni-url` loads a bare domain as https; `localhost`/`127.*` load as http; IPv4 and `host:port` count as addresses.
+- `omni-one-line` the field never wraps: a long address shrinks the font from 18 pt toward 11 pt to fit (18 × room ÷ width at 18 pt), past that it scrolls sideways; the panel keeps its height while typing. `scripts/ux-headed` shoots it with a long address.
 - `omni-search` sends free text to the `search =` engine (default Google).
 - `omni-dismiss` Esc closes it without navigating; Enter on empty input does the same.
 - `omni-status` the line under the field lists tabs, `n/max tabs`, and tab-cap or config-error messages (`mako.omnibox.status`).

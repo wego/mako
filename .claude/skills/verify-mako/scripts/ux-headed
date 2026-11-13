@@ -62,5 +62,14 @@ check cmd-1-from-root-goes-to-last-page is 's["active"] == n["1"]["children"][-1
 $M "$P" key cmd+1; sleep 0.5
 check cmd-1-again-goes-to-root is 's["active"]' 1
 
+echo "== omnibox with a long address"
+long="https://www.example.com/a/very/long/path/that/keeps/going/and/going/with/segments/for/testing/the/omnibox?utm_source=newsletter&utm_medium=email&utm_campaign=autumn-sale-2026&session=4f9c2a7e1b3d5f6a8c0e2b4d6f8a0c2e"
+$M "$P" key cmd+l; sleep 0.3; $M "$P" key cmd+a; $M "$P" type "example.com"; $M "$P" shot "$E/omnibox-short.png" >/dev/null
+$M "$P" key cmd+a; $M "$P" type "$long"; sleep 0.3
+check omnibox-holds-the-whole-address test "$($M "$P" value mako.omnibox.field)" = "$long"
+$M "$P" shot "$E/omnibox-long.png" >/dev/null
+$M "$P" key escape
+echo "look: omnibox-short.png at 18 pt, omnibox-long.png on one line at 11 pt, same panel height"
+
 echo "== $fails failure(s); evidence in $E"
 exit $fails

@@ -108,7 +108,7 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
     /// Kept in sync on every change so the AX tree never depends on the menu being opened.
     let trailsMenu = NSMenu(title: "Trails")
     private let omnibox = NSGlassEffectView()
-    private let field = NSTextField()
+    private let field = OmniboxField()
     private let hint = NSTextField(labelWithString: "")
 
     override init() {
@@ -340,7 +340,14 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         field.isBordered = false
         field.drawsBackground = false
         field.focusRingType = .none
-        field.font = .monospacedSystemFont(ofSize: 18, weight: .regular)
+        field.font = OmniboxField.font(18)
+        field.usesSingleLineMode = true
+        field.cell?.wraps = false
+        field.cell?.isScrollable = true
+        field.postsFrameChangedNotifications = true
+        NotificationCenter.default.addObserver(forName: NSView.frameDidChangeNotification, object: field, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.field.fitFont() }
+        }
         field.placeholderString = "Search or enter address"
         field.delegate = self
         // Enter arrives as the field's action, which accessibility clients can trigger too.
@@ -366,6 +373,8 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
             omnibox.topAnchor.constraint(equalTo: container.topAnchor, constant: 80),
             omnibox.widthAnchor.constraint(equalTo: container.widthAnchor, multiplier: 0.7),
             field.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -36),
+            // The 18 pt line height at every font size, so the panel never jumps while typing.
+            field.heightAnchor.constraint(equalToConstant: OmniboxField.height),
         ])
     }
 
@@ -377,6 +386,12 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         container.addSubview(omnibox, positioned: .above, relativeTo: nil)
         window.makeFirstResponder(field)
         field.currentEditor()?.selectAll(nil)
+        container.layoutSubtreeIfNeeded()
+        field.fitFont()
+    }
+
+    func controlTextDidChange(_ note: Notification) {
+        if note.object as? NSTextField === field { field.fitFont() }
     }
 
     private func updateHint(message: String? = nil) {
@@ -697,4 +712,38 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
             <p style="opacity:.6">\(esc(body))</p></div>
             """
     }
+}
+
+/// The omnibox's one line. It never wraps: a long address shrinks the font from 18 pt
+/// to as small as 11 pt to fit, and past that scrolls sideways.
+final class OmniboxField: NSTextField {
+    static func font(_ size: CGFloat) -> NSFont { .monospacedSystemFont(ofSize: size, weight: .regular) }
+    static let height = ceil(NSLayoutManager().defaultLineHeight(for: font(18))) + 2
+
+    override class var cellClass: AnyClass? {
+        get { CenteredCell.self }
+        set {}
+    }
+
+    /// 18 × room ÷ width at 18 pt, kept within 11…18 and in half points so typing does not
+    /// resize it on every key.
+    func fitFont() {
+        let text = stringValue.isEmpty ? placeholderString ?? "" : stringValue
+        let width = (text as NSString).size(withAttributes: [.font: Self.font(18)]).width
+        let room = bounds.width - 8
+        let size = width > room && room > 0 ? max(11, (36 * room / width).rounded(.down) / 2) : 18
+        guard font?.pointSize != size else { return }
+        font = Self.font(size)
+        // The field editor keeps its own font while editing.
+        (currentEditor() as? NSTextView)?.font = font
+    }
+}
+
+/// Centres a smaller font in the fixed-height omnibox line; the field editor follows drawingRect.
+private final class CenteredCell: NSTextFieldCell {
+    private func centered(_ rect: NSRect) -> NSRect {
+        let height = cellSize(forBounds: rect).height
+        return NSRect(x: rect.minX, y: rect.minY + max(0, (rect.height - height) / 2), width: rect.width, height: min(height, rect.height))
+    }
+    override func drawingRect(forBounds rect: NSRect) -> NSRect { centered(super.drawingRect(forBounds: rect)) }
 }
