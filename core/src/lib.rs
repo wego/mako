@@ -249,6 +249,14 @@ mod tests {
     }
 
     #[test]
+    fn max_trails_above_the_nine_trail_colours_is_capped_and_keeps_the_blocklist() {
+        let c = cfg("max_trails = 10\nblock x.com\n");
+        assert_eq!(c.max_trails, 9);
+        assert_eq!(c.blocks, [Block { domain: "x.com".into(), window: None }]);
+        assert_eq!(cfg("max_trails = 9").max_trails, 9);
+    }
+
+    #[test]
     fn rejects_bad_config_with_line_number() {
         for bad in ["max_trails = 0", "restore_session = maybe", "search = x", "block", "block a.com 9-5", "block a.com 09:00-25:00", "block a.com 09:00-17:00 funday", "blok a.com", "colour = red"] {
             assert!(parse_config(&format!("\n{bad}")).unwrap_err().starts_with("config line 2:"), "{bad}");
