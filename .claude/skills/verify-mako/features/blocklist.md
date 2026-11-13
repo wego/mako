@@ -12,7 +12,7 @@ Pages from hosts in the config's `block` lines do not load; the page shows a "No
 - `block-launch` a blocked address passed at launch opens a trail showing the notice.
 - `block-window` `block <domain> HH:MM-HH:MM [days]` blocks only inside the window, which may pass midnight. Days are `mon`…`sun`, ranges (`mon-fri`), lists (`sat,sun`), `weekdays`, `weekends` or `daily`; none means every day. The reason then says `until HH:MM.` or `until midnight.`.
 - `block-live-edit` adding a `block` line takes effect on the next navigation, without a restart.
-- `block-bad-config` a config line Mako cannot parse makes the whole config fall back to the defaults, so no block rule applies, and the omnibox status's first line names it: ``config line <n>: <problem>: `<line>` ``. A leftover `max_tabs` line is ignored and `max_trails` above 9 is clamped, so neither drops the blocklist.
+- `block-bad-config` a config line Mako cannot use costs only that line: every other line still applies. A `block` line whose time range or days are unusable blocks its domain at all times (reason `<domain> is blocked.`, no `until`). The first issue shows at the sidebar's foot (`mako.sidebar.config`, ``⚠ config line <n>: <problem>: `<line>` ``, ` (and <k> more)` when there are several) and as the omnibox status's first line; a click on the note opens the config file. A leftover `max_tabs` line is ignored silently and `max_trails` above 9 is clamped. `trails-bg` runs under a config with a typo key and a bad schedule.
 - `block-download` a download link or response from a blocked host saves nothing.
 - `block-favicon` no icon request goes to a blocked host, redirects included (`trails-bg` checks it).
 
@@ -33,13 +33,14 @@ Preconditions: baseline (`block x.com`); `MAKO_BACKGROUND=1` is fine for every s
 - **Live edit.** On example.com, `echo 'block example.com' >> verify-runs/latest/state/config`, then `$M $P menu View Reload`. `text` shows `example.com is blocked.`
 - **Launch.** `$C stop; $C launch "" https://x.com`. `text` shows the notice.
 - **Time window.** `printf 'block example.com 00:00-24:00 daily\n' > $E/window.config; $C stop; $C launch $E/window.config https://example.com`. `text` shows `example.com is blocked until midnight.`
-- **Bad config line.** `$C stop; $C launch "" https://example.com`, then `echo 'blok a.com' >> verify-runs/latest/state/config` and `menu File "Open Location…"`. `value mako.omnibox.status | head -1` is ``config line 3: expected `block <domain> [HH:MM-HH:MM] [days]` or `key = value`: `blok a.com` ``. `go x.com` then loads the real x.com (`allow https://x.com/` in the log): the blocklist is gone until the line is fixed.
+- **Bad config lines.** `printf 'max_trails = 3\ncolour = red\nblock x.com\nblock example.com 09:00-25:00\n' > $E/bad.config; $C stop; $C launch $E/bad.config https://x.com https://example.com`. The log has `block x.com: x.com is blocked.` and `block example.com: example.com is blocked.` (no `until`: the bad schedule blocks at all times). `value mako.sidebar.config` is ``⚠ config line 2: unknown setting: `colour = red` (and 1 more)``; `shot` shows it at the sidebar's foot. `menu File "Open Location…"`: `value mako.omnibox.status | head -1` is the same text without `⚠ `. Write a valid config (`block example.com 09:00-17:00`), then `press-id mako.trail.2`: `exists mako.sidebar.config` exits 4, and `go example.com` logs `example.com is blocked until 17:00.` inside the window.
 - **Proof.** The log file in order, `text` after each step, `shot` of the notice.
 
 ## Gotchas
 
 - Assert on the notice's text (`text`, or the log), not the window title. The notice is not an http page, so the trail keeps its last address and label: typing a blocked address over example.com leaves the row and title at `Example Domain`, and a blocked page opened as a trail or a link shows its address as its label (from source; confirm in a run).
 - Block reasons with time windows say `until HH:MM` or `until midnight`; match `is blocked`.
+- A notice page opened at launch in a background run can stay blank: `text` prints `no page content` and `shot` shows an empty page, with a valid config too (seen 2026-11-13). The log is the proof there.
 - `log stream` must start before the action or the lines are missed.
 - Each notice page logs an extra `allow about:blank`; assert on the order of the `block` and `allow https` lines, not the full log.
 - Mako fills in `https://` for a bare domain, so the log shows the full address.

@@ -122,6 +122,7 @@ Stable identifiers Mako sets for automation. Prefer these, menu titles, and the 
 | `mako.sidebar` | The trails sidebar. |
 | `mako.trail.<id>` | A sidebar row (a page). `id` is the page's permanent id, not a position. Its AX value is `selected` on the active page; its AX help is `site icon` once the site's icon has arrived, `no site icon` before. |
 | `mako.sidebar.load` | The note at the sidebar's foot, present only at the trail cap. Value `🧠 <open>/<max>`. |
+| `mako.sidebar.config` | The note above it, present only while the config has unusable lines. Value ``⚠ config line <n>: <problem>: `<line>` ``, plus ` (and <k> more)` when there are several. Clicking or pressing it opens the config file in the default editor, like ⌘,, and that editor takes focus: never press it in a background run. Redrawn with the sidebar, so it appears or goes on the next change to the trails after a config edit. |
 | `mako.trail.<id>.toggle` | That row's collapse/expand control (only when it has pages beneath it). |
 | `mako.trail.<id>.name` | The text field that replaces a row's label while it is being renamed (Trails → Rename Page…). `set` it, then `confirm` it. |
 | `mako.divider` | The edge between sidebar and page. Its value is the sidebar width in points; `set mako.divider 300` resizes it (kept between 160 and the smaller of 480 and the window width less 400). |
@@ -223,7 +224,7 @@ Set `MAKO_BACKGROUND=1` for both tools. `control-mako launch` then starts the te
 
 Every script prints one `PASS`/`FAIL` line per check and exits with the number of failures (99 when it could not build or launch). The check scripts build first unless `MAKO_SKIP_BUILD=1`; `perf` and `ab` use the existing build.
 
-- `scripts/trails-bg`: trails behaviour (links nest, restart restore, lazy loading, trail cap, blocked links, form submits, trail colours, site icons, file links) with no focus and no permissions. 24 checks.
+- `scripts/trails-bg`: trails behaviour (links nest, restart restore, lazy loading, trail cap, blocked links under a config with unusable lines, form submits, trail colours, site icons, file links) with no focus and no permissions. 25 checks.
 - `scripts/trails-ax`: the trails UI through accessibility actions, no focus: sidebar rows, collapse, ⌘1…⌘9 jumps through the Trails menu, sidebar width, Settings, omnibox, trail cap and the 🧠 note, close, Undo Close across a restart, moving and renaming pages, find in page, deep rows at the narrowest sidebar. 53 checks. Needs Accessibility permission.
 - `scripts/dialogs-bg`: `alert()`, `confirm()` and `prompt()` wait for the person, read from `trails.json`; no focus, no permissions. 3 checks.
 - `scripts/dialogs-ax`: page dialogs through accessibility actions, no focus: silencing with the dialog checkbox, lifted only by a navigation the person starts from Mako (address bar, Back, Forward, Reload), never by the page reloading itself or a same-document Back. 17 checks. Needs Accessibility permission.
