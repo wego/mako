@@ -95,6 +95,7 @@ let usage = """
     makoctl <pid> title                    main window title
     makoctl <pid> value <ax-identifier>    AXValue of the element with that identifier
     makoctl <pid> exists <ax-identifier>   exit 0 if present in the tree
+    makoctl <pid> frame <ax-identifier>    "x y width height" of the element, screen points from the top-left
     makoctl <pid> menu <Menu> <Item>       press a menu item via AX
     makoctl <pid> press <name>             AXPress the first control whose title/desc/value is name (web buttons, links)
     makoctl <pid> text                     full visible text of the active page, one line per text run
@@ -194,6 +195,10 @@ case "value", "exists":
     guard args.count > 2 else { fail(usage, 64) }
     guard let e = find(app, id: args[2]) else { fail("no element \(args[2])", 4) }
     if args[1] == "value" { print(str(e, kAXValueAttribute) ?? "") }
+case "frame":
+    guard args.count > 2 else { fail(usage, 64) }
+    let f = frame(args[2])
+    print(Int(f.minX), Int(f.minY), Int(f.width), Int(f.height))
 case "menu":
     guard args.count > 3 else { fail(usage, 64) }
     AXUIElementPerformAction(menuItem(app, args[2], args[3]), kAXPressAction as CFString)

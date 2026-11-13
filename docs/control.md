@@ -68,6 +68,7 @@ Every command is `makoctl <pid> <command> [args]`. Commands that send input (`ke
 | `makoctl <pid> tree [depth] [--menus]` | The AX tree, one element per line: role, subrole, `id=`, `title=`, `desc=`, `value=`. Default depth 12. Web page content appears under `AXWebArea`. `--menus` includes the menu bar; a menu item with a shortcut shows its key as `cmd="1"`. |
 | `makoctl <pid> value <ax-identifier>` | The `AXValue` of the element with that identifier, e.g. the omnibox text. Exit 4 if absent. |
 | `makoctl <pid> exists <ax-identifier>` | Exit 0 if an element with that identifier is in the tree, 4 otherwise. Hidden elements can still exist; use `shot` to prove visibility. |
+| `makoctl <pid> frame <ax-identifier>` | The element's frame as `x y width height`, whole screen points from the top-left of the main display. Exit 4 if absent. Compare elements of one window, such as a sidebar row and its toggle, rather than absolute positions. |
 | `makoctl <pid> text` | The active page's visible text, untruncated, one line per text run (`tree` shortens values to 80 characters). |
 | `makoctl <pid> menu-items <Menu>` | One line per item in a menu bar menu; the checked item starts with `*`. `menu-items Tabs` lists open tabs with the active one checked. Does not open the menu. |
 | `makoctl <pid> windows` | One line per window. Sign-in popups carry `id="mako.popup"`. |

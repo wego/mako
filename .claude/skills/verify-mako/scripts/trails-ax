@@ -130,6 +130,22 @@ $M "$P" set mako.omnibox.field "zzzqqq"; $M "$P" confirm mako.omnibox.field; sle
 check find-miss sh -c "$M $P value mako.omnibox.status | head -1 | grep -q 'Not found'"
 $M "$P" shot "$E/sidebar.png" >/dev/null
 
+echo "== deep pages at the narrowest sidebar"
+for i in 1 2 3 4 5; do omni "New Page in Trail" "$U/c.html?deep$i" 1; done
+check chain-reaches-depth-six is '(n["10"]["parent"], n["11"]["parent"])' "(9, 10)"
+$M "$P" set mako.divider 100; sleep 0.5
+check width-floor-is-160 test "$($M "$P" value mako.divider)" = 160
+$M "$P" shot "$E/narrow-deep.png" >/dev/null
+$M "$P" press-id mako.trail.10; sleep 0.4; $M "$P" menu Trails "Rename Page…"; sleep 0.4
+row=$($M "$P" frame mako.trail.10); toggle=$($M "$P" frame mako.trail.10.toggle); name=$($M "$P" frame mako.trail.10.name)
+echo "depth-5 row [$row] toggle [$toggle] name [$name]" > "$E/narrow-deep.txt"
+read -r rx _ rw _ <<<"$row"; read -r tx _ _ _ <<<"$toggle"; read -r nx _ nw _ <<<"$name"
+check deep-name-keeps-40pt test "${nw:-0}" -ge 40
+check deep-name-clear-of-toggle test $((nx + nw)) -le "${tx:-0}"
+check deep-name-inside-row test "${nx:-0}" -ge "${rx:-1}"
+log show --last 5m --predicate "processID == $P" 2>/dev/null > "$E/narrow-deep.log"
+check no-broken-constraints sh -c "! grep -q 'Unable to simultaneously satisfy' '$E/narrow-deep.log'"
+
 after=$(front)
 if [ "$after" = "$before" ]; then pass never-took-focus; else fail "never-took-focus (front was $before, now $after)"; fi
 echo "== $fails failure(s); evidence in $E"
