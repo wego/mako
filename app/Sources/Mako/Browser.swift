@@ -101,8 +101,10 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
     /// Page dialogs shown per web view, and web views the person has silenced.
     private var dialogsShown: [ObjectIdentifier: Int] = [:]
     private var silenced: Set<ObjectIdentifier> = []
-    /// Web views with a navigation the person started from Mako (address bar, Back, Forward, Reload).
-    private var userLoads: Set<ObjectIdentifier> = []
+    /// The navigation the person last started from Mako (address bar, Back, Forward, Reload) per
+    /// web view, kept by identity: a same-document Back never commits, so a bare mark would
+    /// wait for the page's next reload.
+    private var userLoads: [ObjectIdentifier: WKNavigation] = [:]
     private let webConfig = WKWebViewConfiguration()
     private let container = NSView()
     private let sidebar = Sidebar()
@@ -269,7 +271,7 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         recency.removeAll { $0 == id }
         dialogsShown[ObjectIdentifier(view)] = nil
         silenced.remove(ObjectIdentifier(view))
-        userLoads.remove(ObjectIdentifier(view))
+        userLoads[ObjectIdentifier(view)] = nil
         if view === shown { shown = nil }
         view.removeFromSuperview()
     }
@@ -427,8 +429,7 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
     @objc func reload(_: Any?) { userLoad { $0.reload() } }
     private func userLoad(_ go: (WKWebView) -> WKNavigation?) {
         guard let shown else { return }
-        userLoads.insert(ObjectIdentifier(shown))
-        if go(shown) == nil { userLoads.remove(ObjectIdentifier(shown)) }
+        userLoads[ObjectIdentifier(shown)] = go(shown)
     }
     @objc func zoomIn(_: Any?) { shown?.pageZoom += 0.1 }
     @objc func zoomOut(_: Any?) { if let shown { shown.pageZoom = max(0.3, shown.pageZoom - 0.1) } }
@@ -640,7 +641,7 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         if let popup = closing.contentView {
             dialogsShown[ObjectIdentifier(popup)] = nil
             silenced.remove(ObjectIdentifier(popup))
-            userLoads.remove(ObjectIdentifier(popup))
+            userLoads[ObjectIdentifier(popup)] = nil
         }
         // Hand focus back to the page that opened the sign-in.
         if !Self.background { window.makeKeyAndOrderFront(nil) }
@@ -702,8 +703,9 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
 
     /// Only a load the person started lifts silencing: a page that reloads or redirects
     /// itself between alerts would otherwise reset its own count and loop again.
-    func webView(_ webView: WKWebView, didCommit _: WKNavigation!) {
-        guard userLoads.remove(ObjectIdentifier(webView)) != nil else { return }
+    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        guard let started = userLoads[ObjectIdentifier(webView)], started === navigation else { return }
+        userLoads[ObjectIdentifier(webView)] = nil
         dialogsShown[ObjectIdentifier(webView)] = nil
         silenced.remove(ObjectIdentifier(webView))
     }
