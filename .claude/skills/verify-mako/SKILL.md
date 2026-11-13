@@ -86,7 +86,7 @@ Kills only the PID this run launched and removes `$MAKO_RUN/state` and the run's
 
 ## Scripts
 
-Each lives in `.claude/skills/verify-mako/scripts/` and runs from the repo root with no arguments unless shown. Each prints one `PASS`/`FAIL` line per check and exits with the number of failures (99 = could not build or launch). Each builds first; `MAKO_SKIP_BUILD=1` skips that when `build/` is current.
+Each lives in `.claude/skills/verify-mako/scripts/` and runs from the repo root with no arguments unless shown. Each prints one `PASS`/`FAIL` line per check and exits with the number of failures (99 = could not build or launch). The check scripts build first; `MAKO_SKIP_BUILD=1` skips that when `build/` is current. `perf` and `ab` use the existing build.
 
 | Script | Covers | Needs | Checks |
 | --- | --- | --- | --- |

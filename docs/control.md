@@ -221,7 +221,7 @@ Set `MAKO_BACKGROUND=1` for both tools. `control-mako launch` then starts the te
 
 ## Verification and performance
 
-Every script prints one `PASS`/`FAIL` line per check and exits with the number of failures (99 when it could not build or launch). Each builds first unless `MAKO_SKIP_BUILD=1`.
+Every script prints one `PASS`/`FAIL` line per check and exits with the number of failures (99 when it could not build or launch). The check scripts build first unless `MAKO_SKIP_BUILD=1`; `perf` and `ab` use the existing build.
 
 - `scripts/trails-bg`: trails behaviour (links nest, restart restore, lazy loading, trail cap, blocked links, form submits, trail colours, site icons, file links) with no focus and no permissions. 24 checks.
 - `scripts/trails-ax`: the trails UI through accessibility actions, no focus: sidebar rows, collapse, ⌘1…⌘9 jumps through the Trails menu, sidebar width, Settings, omnibox, trail cap and the 🧠 note, close, Undo Close across a restart, moving and renaming pages, find in page, deep rows at the narrowest sidebar. 53 checks. Needs Accessibility permission.
