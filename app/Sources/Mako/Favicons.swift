@@ -1,18 +1,19 @@
 import AppKit
 import ImageIO
 
-/// Site icons for sidebar rows, by host. A page's own declared icon wins; any host without
-/// one gets /favicon.ico, so rows of pages that never loaded have icons too. A host that
-/// failed is not asked again this session.
+/// Site icons for sidebar rows, by page. A loaded page's own declared icon wins; any other
+/// page gets its site's /favicon.ico, so rows of pages that never loaded have icons too.
+/// Images are kept by icon address, so a late /favicon.ico never replaces a declared icon.
+/// An address that failed is not asked again this session.
 @MainActor
 final class Favicons {
     var onChange: () -> Void = {}
 
-    private var icons: [String: NSImage] = [:]
-    private var failed: Set<String> = []
-    private var fetching: Set<String> = []
-    /// Hosts whose icon came from a page's declaration; /favicon.ico never replaces those.
-    private var declared: Set<String> = []
+    private var images: [URL: NSImage] = [:]
+    /// Each loaded page's declared icon, by page address.
+    private var declared: [String: URL] = [:]
+    private var fetching: Set<URL> = []
+    private var failed: Set<URL> = []
 
     /// Sends no cookies and keeps none: an icon request must not identify the person.
     /// Redirects pass the same http(s) and blocklist checks as the first request.
@@ -38,20 +39,21 @@ final class Favicons {
         })()
         """
 
-    /// The icon for a page's address, starting a /favicon.ico fetch the first time a host is seen.
+    /// The icon for a page's address, starting a /favicon.ico fetch while it has none.
     func icon(for address: String) -> NSImage? {
-        guard let url = URL(string: address), let host = Self.key(url) else { return nil }
-        if let icon = icons[host] { return icon }
-        if !failed.contains(host), !fetching.contains(host), let fallback = URL(string: "/favicon.ico", relativeTo: url) {
-            fetch(fallback.absoluteURL, for: host)
-        }
+        guard let page = URL(string: address), Self.key(page) != nil else { return nil }
+        if let icon = declared[address].flatMap({ images[$0] }) { return icon }
+        guard let fallback = URL(string: "/favicon.ico", relativeTo: page)?.absoluteURL else { return nil }
+        if let icon = images[fallback] { return icon }
+        fetch(fallback)
         return nil
     }
 
-    /// A loaded page declared `icon` (from `script`). It replaces a /favicon.ico icon.
+    /// A loaded page declared `icon` (from `script`).
     func pageDeclared(_ icon: URL, on page: URL) {
-        guard let host = Self.key(page), !declared.contains(host), !fetching.contains(host) else { return }
-        fetch(icon, for: host, else: URL(string: "/favicon.ico", relativeTo: page)?.absoluteURL)
+        guard Self.key(page) != nil else { return }
+        declared[page.absoluteString] = icon
+        if images[icon] != nil { onChange() } else { fetch(icon) }
     }
 
     /// http(s) and not blocked: fetching a blocked host's icon would be a visit by another name.
@@ -83,10 +85,9 @@ final class Favicons {
         return NSImage(cgImage: image, size: .zero)
     }
 
-    /// `fallback` is set for a declared icon: the page's /favicon.ico, tried if it fails.
-    private func fetch(_ url: URL, for host: String, else fallback: URL? = nil) {
-        guard Self.allowed(url) else { return }
-        fetching.insert(host)
+    private func fetch(_ url: URL) {
+        guard Self.allowed(url), !fetching.contains(url), !failed.contains(url) else { return }
+        fetching.insert(url)
         Task { [session] in
             let image: NSImage? = await {
                 guard let (bytes, response) = try? await session.bytes(from: url),
@@ -101,17 +102,15 @@ final class Favicons {
                 } catch { return nil }
                 return Self.decode(data)
             }()
-            fetching.remove(host)
+            fetching.remove(url)
+            let site = Self.key(url) ?? ""
             if let image {
-                icons[host] = image
-                if fallback != nil { declared.insert(host) }
-                log.info("favicon \(host, privacy: .public) from \(url.absoluteString, privacy: .public)")
+                images[url] = image
+                log.info("favicon \(site, privacy: .public) from \(url.absoluteString, privacy: .public)")
                 onChange()
-            } else if let fallback {
-                if icons[host] == nil, !failed.contains(host) { fetch(fallback, for: host) }
             } else {
-                failed.insert(host)
-                log.info("favicon \(host, privacy: .public) none at \(url.absoluteString, privacy: .public)")
+                failed.insert(url)
+                log.info("favicon \(site, privacy: .public) none at \(url.absoluteString, privacy: .public)")
             }
         }
     }
