@@ -3,7 +3,8 @@ import WebKit
 
 /// A trail page's web view. A middle-click opens what it points at in the background:
 /// a link's address directly, so single-page apps that route left clicks in place cannot
-/// keep it; anything else gets a real left click, and the navigation it starts within a
+/// keep it; a download link (whose `download` attribute only WebKit's own activation honours)
+/// and anything else get a real left click, and the navigation it starts within a
 /// second opens in the background (see `claimBackground`). Stock WebKit gives non-link
 /// elements only an auxclick, so script buttons would otherwise ignore the middle button.
 final class PageView: WKWebView {
@@ -17,10 +18,10 @@ final class PageView: WKWebView {
         return backgroundUntil.map { $0 > .now } ?? false
     }
 
-    /// Topmost link at a viewport point, read from Mako's own script world.
+    /// Topmost link at a viewport point, read from Mako's own script world. Not a download link.
     private static let linkAt = """
         const a = document.elementFromPoint(x, y)?.closest('a[href], area[href]');
-        return a && /^https?:$/.test(new URL(a.href).protocol) ? a.href : null;
+        return a && !a.hasAttribute('download') && /^https?:$/.test(new URL(a.href).protocol) ? a.href : null;
         """
 
     override func otherMouseDown(with event: NSEvent) {

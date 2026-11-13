@@ -542,6 +542,8 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         // A download link obeys the blocklist like any other navigation, and like an
         // unshowable response it may only come from the page itself, not an embedded frame.
         if action.shouldPerformDownload {
+            // The download is the navigation a replayed middle-click started; the next one stays in front.
+            _ = (webView as? PageView)?.claimBackground()
             return mainFrame && action.sourceFrame.isMainFrame && url?.host().flatMap { Core.blockReason(host: $0) } == nil ? .download : .cancel
         }
         // A followed link opens beneath its page instead of replacing it. Jumps within the
