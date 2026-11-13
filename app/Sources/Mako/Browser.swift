@@ -683,6 +683,7 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         if dialogsShown[page, default: 0] > 1 {
             alert.showsSuppressionButton = true
             alert.suppressionButton?.title = "Don’t show more dialogs from this page"
+            alert.suppressionButton?.setAccessibilityIdentifier("mako.dialog.silence")
         }
         let answer = await alert.beginSheetModal(for: window)
         if alert.suppressionButton?.state == .on { silenced.insert(page) }

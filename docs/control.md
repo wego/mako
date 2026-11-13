@@ -65,7 +65,7 @@ Every command is `makoctl <pid> <command> [args]`. Commands that send input (`ke
 | `makoctl <pid> title` | The window's AX title: the active page's label (its name, else its title, else its address), or `Mako` when no page is open. |
 | `makoctl <pid> wait-title <substring> [seconds]` | Polls every 50 ms until the title contains the substring (default 10 s). Prints the title; exit 5 on timeout. The standard way to wait for a page load or tab change. |
 | `makoctl <pid> tree [depth] [--menus]` | The AX tree, one element per line: role, subrole, `id=`, `title=`, `desc=`, `value=`. Default depth 12. Web page content appears under `AXWebArea`. `--menus` includes the menu bar. |
-| `makoctl <pid> value <ax-identifier>` | The `AXValue` of the element with that identifier, e.g. the omnibox text. Exit 4 if absent. |
+| `makoctl <pid> value <ax-identifier>` | The `AXValue` of the element with that identifier, e.g. the omnibox text, or `1`/`0` for a checkbox. Exit 4 if absent. |
 | `makoctl <pid> exists <ax-identifier>` | Exit 0 if an element with that identifier is in the tree, 4 otherwise. Hidden elements can still exist; use `shot` to prove visibility. |
 | `makoctl <pid> text` | The active page's visible text, untruncated, one line per text run (`tree` shortens values to 80 characters). |
 | `makoctl <pid> menu-items <Menu>` | One line per item in a menu bar menu; the checked item starts with `*`. `menu-items Tabs` lists open tabs with the active one checked. Does not open the menu. |
@@ -212,6 +212,7 @@ Set `MAKO_BACKGROUND=1` for both tools. `control-mako launch` then starts the te
 
 - `scripts/trails-bg`: trails behaviour (links nest, restart restore, lazy loading, trail cap, blocked links, form submits) with no focus and no permissions. 18 checks.
 - `scripts/trails-ax`: the trails UI through accessibility actions, no focus: sidebar rows, collapse, omnibox, trail cap, close, Undo Close across a restart, moving and renaming pages, sidebar width, find in page. 36 checks. Needs Accessibility permission.
+- `scripts/dialogs-ax`: page dialogs through accessibility actions, no focus: silencing a page with the dialog checkbox does not silence the next page loaded in the same view. 5 checks. Needs Accessibility permission.
 - `scripts/smoke`: every feature recipe in `.claude/skills/verify-mako/features/`, then `perf`. One `PASS`/`FAIL` line per check; exit status is the number of failures. Takes focus for about 3 minutes.
 - `scripts/perf`: performance budgets (launch, new tab, tab switch, memory, bundle size, Rust core). See the top of the script for the numbers.
 - `scripts/ab <base-checkout> <candidate-checkout> [rounds]`: paired A/B of in-app latency (launch, new tab, tab switch) between two built checkouts, interleaving launches so background load hits both alike. Prints medians, the median paired delta, and how often the candidate won. Use it to decide whether a change is faster; a single `perf` run is too noisy on a busy Mac.
