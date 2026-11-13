@@ -48,6 +48,15 @@ check previous-page is 's["active"]' 2
 $M "$P" menu Trails "Next Page"; sleep 0.4
 check next-page is 's["active"]' 3
 
+echo "== jump to a trail (⌘1…⌘9 items)"
+$M "$P" menu Trails "Page A"; sleep 0.4
+check jump-from-inside-goes-to-root is 's["active"]' 1
+$M "$P" menu Trails "Page A"; sleep 0.4
+check jump-from-root-goes-to-last-page is 's["active"]' 3
+$M "$P" menu Trails "Page A"; sleep 0.4
+check jump-from-last-page-goes-to-root is 's["active"]' 1
+check jump-item-has-cmd-1 sh -c "$M $P tree 20 --menus | grep -q 'title=\"Page A\".*cmd=\"1\"'"
+
 echo "== sidebar width"
 check default-width-is-a-fifth-of-the-window test "$($M "$P" value mako.divider)" = 240
 $M "$P" set mako.divider 300; sleep 0.3
@@ -62,14 +71,17 @@ $M "$P" menu Mako "Settings…"; sleep 0.5
 check settings-shows-default-cap test "$($M "$P" value mako.settings.maxTrails)" = 3
 check settings-stays-in-background test "$(front)" = "$before"
 $M "$P" set mako.settings.maxTrails 0; $M "$P" confirm mako.settings.maxTrails; sleep 0.3
-check settings-refuses-zero sh -c "test \"\$($M $P value mako.settings.maxTrails)\" = 3 && ! grep -q max_trails '$CF'"
+check settings-refuses-zero sh -c "test \"\$($M $P value mako.settings.maxTrails)\" = 3 && grep -qx 'max_trails = 3' '$CF'"
 $M "$P" set mako.settings.maxTrails 2; $M "$P" confirm mako.settings.maxTrails; sleep 0.3
 check settings-writes-config grep -qx 'max_trails = 2' "$CF"
 check settings-keeps-other-lines grep -qx 'block x.com' "$CF"
+check default-config-has-no-max-tabs sh -c "! grep -q max_tabs '$CF'"
 
 echo "== omnibox"
+check load-hidden-below-cap sh -c "! $M $P exists mako.sidebar.load"
 omni "New Trail" "$U/c.html?t2"
 check new-trail is 's["roots"]' "[1, 4]"
+check load-shown-at-cap test "$($M "$P" value mako.sidebar.load)" = "🧠 2/2"
 omni "New Trail" "$U/c.html?t3" 1
 check third-trail-refused is 'len(s["roots"])' 2
 check cap-message sh -c "$M $P value mako.omnibox.status | head -1 | grep -q 'trail cap reached (2)'"
@@ -118,6 +130,7 @@ $M "$P" set mako.omnibox.field "zzzqqq"; $M "$P" confirm mako.omnibox.field; sle
 check find-miss sh -c "$M $P value mako.omnibox.status | head -1 | grep -q 'Not found'"
 $M "$P" shot "$E/sidebar.png" >/dev/null
 
-check never-took-focus test "$(front)" = "$before"
+after=$(front)
+if [ "$after" = "$before" ]; then pass never-took-focus; else fail "never-took-focus (front was $before, now $after)"; fi
 echo "== $fails failure(s); evidence in $E"
 exit "$fails"

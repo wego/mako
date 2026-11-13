@@ -15,9 +15,10 @@ Swift/AppKit shell over WKWebView; policy and omnibox logic in a small Rust core
 | --- | --- |
 | ⌘T | New trail (refused at the cap; default 3, set in Settings) |
 | ⌥⌘T | New page beneath the current one |
-| ⌘L | Omnibox: load an address in the current page |
+| ⌘L | Omnibox: load an address in the current page (one line; long addresses shrink to fit) |
 | ⌘W / ⇧⌘T | Close page (with the pages beneath it) / reopen closed page |
 | ⌃Tab / ⌃⇧Tab | Next / previous page in the sidebar |
+| ⌘1…⌘9 | Go to that trail's first page; again, to its last page, and back |
 | ⌘F, ⌘G / ⇧⌘G | Find in page, next / previous match |
 | ⌘[ / ⌘] | Back / forward within a page |
 | ⌘R, ⌘= ⌘- ⌘0 | Reload, zoom |
@@ -25,9 +26,9 @@ Swift/AppKit shell over WKWebView; policy and omnibox logic in a small Rust core
 | ⌘. | Settings (trail cap) |
 | ⌘, | Edit config |
 
-Clicking a link opens it as a new page beneath the current one; ⌘-click opens it there without leaving the page you are on. Drag a page in the sidebar onto another to move it (with everything beneath it) before, after or inside that page, or use Trails → Move Page Up / Down, Indent, Outdent. Double-click a page to rename it. Drag the sidebar's edge to resize it. Files a page cannot show are saved to Downloads. Typing an address with ⌘L, submitting a form, or a redirect changes the current page in place. Only recently shown pages stay loaded; the rest reload when selected. Trails are saved after every change in `trails.json` beside the config.
+Clicking a link opens it as a new page beneath the current one; ⌘-click or middle-click opens it there without leaving the page you are on. A middle-click on anything else is a click whose navigation, if it starts one, opens in the background too. Middle-click a page in the sidebar to close it. Drag a page in the sidebar onto another to move it (with everything beneath it) before, after or inside that page, or use Trails → Move Page Up / Down, Indent, Outdent. At the trail cap a quiet 🧠 count sits at the foot of the sidebar. Each page shows its site's icon. Each trail has its own colour, a rail down the sidebar and its Trails menu dot, and keeps it while other trails close or move. Double-click a page to rename it. Drag the sidebar's edge to resize it. Files a page cannot show are saved to Downloads. Typing an address with ⌘L, submitting a form, or a redirect changes the current page in place. Only recently shown pages stay loaded; the rest reload when selected. Trails are saved after every change in `trails.json` beside the config.
 
-Mako's own shortcuts (⌘T ⌥⌘T ⇧⌘T ⌘W ⌘L ⌘. ⌘, ⌥⌘C ⌃Tab) win over pages; every other shortcut goes to the page first, so web editors keep ⌘Z.
+Mako's own shortcuts (⌘T ⌥⌘T ⇧⌘T ⌘W ⌘L ⌘1…⌘9 ⌘. ⌘, ⌥⌘C ⌃Tab) win over pages; every other shortcut goes to the page first, so web editors keep ⌘Z.
 
 ## Icon
 
@@ -65,7 +66,7 @@ The `verify-mako` skill (`.claude/skills/verify-mako/`) launches an isolated ins
 
 `~/.config/mako/config`, re-read on every navigation:
 
-    max_trails = 3                         # trails (top-level pages); pages within a trail are unlimited
+    max_trails = 3                         # trails (top-level pages), 1–9; pages within a trail are unlimited
     restore_session = true                 # keep trails (and Undo Close) across restarts (default)
     search = https://duckduckgo.com/?q=%s
     block x.com                            # always, includes subdomains and embeds (iframes)

@@ -5,8 +5,8 @@ Quitting Mako remembers its open pages and which tab was active; the next launch
 ## Sub-features
 
 - `session-save` quitting writes the open http(s) tabs and the active one.
-- `session-restore` launching reopens them, capped at `max_tabs`, with the same active tab.
-- `session-plus-link` opening Mako with a link restores the session and adds the link as a tab; if restored tabs already fill `max_tabs`, the link prefills the omnibox with the cap prompt instead.
+- `session-restore` launching reopens them with the same active tab.
+- `session-plus-link` opening Mako with a link restores the session and adds the link as a tab; if restored trails already fill `max_trails`, the link opens beneath the current page instead.
 - `session-off` `restore_session = false` starts with one blank tab and removes the saved session at quit.
 
 ## How to get to it (user POV)

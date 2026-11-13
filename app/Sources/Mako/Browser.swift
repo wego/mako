@@ -55,7 +55,7 @@ final class MenuFirstWindow: NSWindow {
     private static let owned: [(NSEvent.ModifierFlags, String)] = [
         (.command, "t"), ([.command, .option], "t"), ([.command, .shift], "t"),
         (.command, "w"), (.command, "l"), (.command, ","), (.command, "."), ([.command, .option], "c"),
-    ]
+    ] + (1...9).map { (.command, String($0)) }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         let mods = event.modifierFlags.intersection([.command, .option, .shift, .control])
@@ -108,13 +108,14 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
     private let webConfig = WKWebViewConfiguration()
     private let container = NSView()
     private let sidebar = Sidebar()
+    private let favicons = Favicons()
     private let divider = DividerView()
     private var sidebarWidth: NSLayoutConstraint!
     private let blank = NSImageView()
     /// Kept in sync on every change so the AX tree never depends on the menu being opened.
     let trailsMenu = NSMenu(title: "Trails")
     private let omnibox = NSGlassEffectView()
-    private let field = NSTextField()
+    private let field = OmniboxField()
     private let hint = NSTextField(labelWithString: "")
 
     override init() {
@@ -159,6 +160,8 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         sidebar.onRename = { [unowned self] in apply("rename", ["id": $0, "name": $1]) }
         sidebar.onClose = { [unowned self] in close($0) }
         sidebar.onPlace = { [unowned self] in apply("place", ["id": $0, "target": $1, "place": $2.rawValue]) }
+        sidebar.iconFor = { [unowned self] in favicons.icon(for: $0.url) }
+        favicons.onChange = { [unowned self] in sidebar.refreshIcons() }
         divider.onDrag = { [unowned self] in setSidebarWidth(sidebarWidth.constant + $0) }
         divider.onSet = { [unowned self] in setSidebarWidth($0) }
 
@@ -239,6 +242,7 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         window.subtitle = ""
         if !omnibox.isHidden { updateHint() }
         sidebar.update(store.rows)
+        sidebar.showLoad(trails: store.rows.filter { $0.depth == 0 }.count, max: Core.maxTrails)
         rebuildTrailsMenu()
         if omnibox.isHidden, let view { window.makeFirstResponder(view) }
     }
@@ -247,7 +251,8 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
     private func liveView(_ row: TrailRow) -> WKWebView {
         if let view = views[row.id] { return view }
         let id = row.id
-        let w = WKWebView(frame: .zero, configuration: webConfig)
+        let w = PageView(frame: .zero, configuration: webConfig)
+        w.onBackgroundLink = { [weak self] url in self?.apply("open_child", ["parent": id, "url": url.absoluteString, "select": false]) }
         w.navigationDelegate = self
         w.uiDelegate = self
         w.allowsBackForwardNavigationGestures = true
@@ -297,13 +302,30 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
             trailsMenu.addItem(withTitle: title, action: action, keyEquivalent: "").target = self
         }
         trailsMenu.addItem(.separator())
+        var trail = 0
         for row in store.rows {
             let item = NSMenuItem(title: row.label, action: #selector(selectMenuRow(_:)), keyEquivalent: "")
             item.indentationLevel = row.depth
             item.target = self
             item.tag = Int(row.id)
             item.state = row.active ? .on : .off
+            // A trail's root carries its ⌘1…⌘9 jump, so each trail is listed once.
+            if row.depth == 0 {
+                trail += 1
+                item.image = Self.dot(.trail(row.color))
+                item.action = #selector(jumpToTrail(_:))
+                item.tag = trail - 1
+                if trail <= 9 { item.keyEquivalent = String(trail) }
+            }
             trailsMenu.addItem(item)
+        }
+    }
+
+    private static func dot(_ color: NSColor) -> NSImage {
+        NSImage(size: NSSize(width: 10, height: 10), flipped: false) { rect in
+            color.setFill()
+            NSBezierPath(ovalIn: rect.insetBy(dx: 1, dy: 1)).fill()
+            return true
         }
     }
 
@@ -329,7 +351,14 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         field.isBordered = false
         field.drawsBackground = false
         field.focusRingType = .none
-        field.font = .monospacedSystemFont(ofSize: 18, weight: .regular)
+        field.font = OmniboxField.font(18)
+        field.usesSingleLineMode = true
+        field.cell?.wraps = false
+        field.cell?.isScrollable = true
+        field.postsFrameChangedNotifications = true
+        NotificationCenter.default.addObserver(forName: NSView.frameDidChangeNotification, object: field, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.field.fitFont() }
+        }
         field.placeholderString = "Search or enter address"
         field.delegate = self
         // Enter arrives as the field's action, which accessibility clients can trigger too.
@@ -355,6 +384,8 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
             omnibox.topAnchor.constraint(equalTo: container.topAnchor, constant: 80),
             omnibox.widthAnchor.constraint(equalTo: container.widthAnchor, multiplier: 0.7),
             field.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -36),
+            // The 18 pt line height at every font size, so the panel never jumps while typing.
+            field.heightAnchor.constraint(equalToConstant: OmniboxField.height),
         ])
     }
 
@@ -366,6 +397,12 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         container.addSubview(omnibox, positioned: .above, relativeTo: nil)
         window.makeFirstResponder(field)
         field.currentEditor()?.selectAll(nil)
+        container.layoutSubtreeIfNeeded()
+        field.fitFont()
+    }
+
+    func controlTextDidChange(_ note: Notification) {
+        if note.object as? NSTextField === field { field.fitFont() }
     }
 
     private func updateHint(message: String? = nil) {
@@ -459,6 +496,11 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
     @objc func renamePage(_: Any?) { if let id = store.active?.id { sidebar.beginRename(id) } }
 
     @objc func selectMenuRow(_ sender: NSMenuItem) { select(UInt64(sender.tag)) }
+    /// A trail's root, or from the root the trail's last page; the rule is the core's.
+    @objc func jumpToTrail(_ sender: NSMenuItem) {
+        Perf.measure("jumpToTrail")
+        if apply("jump", ["trail": sender.tag]) != nil { NSSound.beep() }
+    }
     private func select(_ id: UInt64) {
         Perf.measure("selectPage")
         apply("select", ["id": id])
@@ -514,18 +556,23 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         // A download link obeys the blocklist like any other navigation, and like an
         // unshowable response it may only come from the page itself, not an embedded frame.
         if action.shouldPerformDownload {
+            // The download is the navigation a replayed middle-click started; the next one stays in front.
+            _ = (webView as? PageView)?.claimBackground()
             return mainFrame && action.sourceFrame.isMainFrame && url?.host().flatMap { Core.blockReason(host: $0) } == nil ? .download : .cancel
         }
         // A followed link opens beneath its page instead of replacing it. Jumps within the
         // same document (#section) and links in sign-in popups stay where they are. This comes
         // before the block check so a blocked link shows its notice in the new page, not over
         // the page it was clicked on.
-        if action.navigationType == .linkActivated, mainFrame, let url, isWeb(url), let parent = id(of: webView),
-           !sameDocument(url, webView.url) {
-            log.info("child of \(parent) \(url.absoluteString, privacy: .public)")
-            // ⌘-click opens the page beneath this one without leaving it.
-            apply("open_child", ["parent": parent, "url": url.absoluteString, "select": !action.modifierFlags.contains(.command)])
-            return .cancel
+        // So does whatever a middle-click starts (a script's `location = …` or window.open).
+        if mainFrame, let url, isWeb(url), let parent = id(of: webView), !sameDocument(url, webView.url) {
+            let background = [.linkActivated, .other].contains(action.navigationType) && (webView as? PageView)?.claimBackground() == true
+            if background || action.navigationType == .linkActivated {
+                log.info("child of \(parent) \(url.absoluteString, privacy: .public)\(background ? " (middle-click)" : "", privacy: .public)")
+                // ⌘-click opens the page beneath this one without leaving it.
+                apply("open_child", ["parent": parent, "url": url.absoluteString, "select": !(background || action.modifierFlags.contains(.command))])
+                return .cancel
+            }
         }
         if let host = url?.host(), let reason = Core.blockReason(host: host) {
             guard mainFrame else {
@@ -557,7 +604,9 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
     private var downloads: [ObjectIdentifier: (file: URL, source: URL?)] = [:]
 
     func download(_ download: WKDownload, decideDestinationUsing response: URLResponse, suggestedFilename: String) async -> URL? {
-        let folder = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
+        // MAKO_DOWNLOADS lets verification runs keep their downloads out of the person's Downloads.
+        let folder = ProcessInfo.processInfo.environment["MAKO_DOWNLOADS"].map { URL(fileURLWithPath: $0) }
+            ?? FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
         // The page chooses the name: keep only its last path component so it cannot leave Downloads.
         let name = URL(fileURLWithPath: suggestedFilename).lastPathComponent
         var target = folder.appending(path: name)
@@ -603,6 +652,11 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
     /// from WebKit's configuration, which is what keeps window.opener alive for OAuth.
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
                  for action: WKNavigationAction, windowFeatures features: WKWindowFeatures) -> WKWebView? {
+        if let url = action.request.url, isWeb(url), let parent = id(of: webView), (webView as? PageView)?.claimBackground() == true {
+            log.info("child of \(parent) \(url.absoluteString, privacy: .public) (middle-click)")
+            apply("open_child", ["parent": parent, "url": url.absoluteString, "select": false])
+            return nil
+        }
         guard action.navigationType != .linkActivated else {
             if let url = action.request.url {
                 if isWeb(url), let parent = id(of: webView) {
@@ -712,6 +766,14 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
 
     func webView(_ webView: WKWebView, didFinish _: WKNavigation!) {
         Perf.firstPage()
+        // Read the page's declared icon from Mako's own script world, out of the page's reach.
+        if id(of: webView) != nil, let page = webView.url {
+            webView.evaluateJavaScript(Favicons.script, in: nil, in: .defaultClient) { [weak self] result in
+                MainActor.assumeIsolated {
+                    if case .success(let href as String) = result, let icon = URL(string: href) { self?.favicons.pageDeclared(icon, on: page) }
+                }
+            }
+        }
         log.info("loaded page \(self.id(of: webView).map(String.init) ?? "popup", privacy: .public): \(webView.title ?? "", privacy: .public)")
     }
 
@@ -736,4 +798,38 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
             <p style="opacity:.6">\(esc(body))</p></div>
             """
     }
+}
+
+/// The omnibox's one line. It never wraps: a long address shrinks the font from 18 pt
+/// to as small as 11 pt to fit, and past that scrolls sideways.
+final class OmniboxField: NSTextField {
+    static func font(_ size: CGFloat) -> NSFont { .monospacedSystemFont(ofSize: size, weight: .regular) }
+    static let height = ceil(NSLayoutManager().defaultLineHeight(for: font(18))) + 2
+
+    override class var cellClass: AnyClass? {
+        get { CenteredCell.self }
+        set {}
+    }
+
+    /// 18 × room ÷ width at 18 pt, kept within 11…18 and in half points so typing does not
+    /// resize it on every key.
+    func fitFont() {
+        let text = stringValue.isEmpty ? placeholderString ?? "" : stringValue
+        let width = (text as NSString).size(withAttributes: [.font: Self.font(18)]).width
+        let room = bounds.width - 8
+        let size = width > room && room > 0 ? max(11, (36 * room / width).rounded(.down) / 2) : 18
+        guard font?.pointSize != size else { return }
+        font = Self.font(size)
+        // The field editor keeps its own font while editing.
+        (currentEditor() as? NSTextView)?.font = font
+    }
+}
+
+/// Centres a smaller font in the fixed-height omnibox line; the field editor follows drawingRect.
+private final class CenteredCell: NSTextFieldCell {
+    private func centered(_ rect: NSRect) -> NSRect {
+        let height = cellSize(forBounds: rect).height
+        return NSRect(x: rect.minX, y: rect.minY + max(0, (rect.height - height) / 2), width: rect.width, height: min(height, rect.height))
+    }
+    override func drawingRect(forBounds rect: NSRect) -> NSRect { centered(super.drawingRect(forBounds: rect)) }
 }

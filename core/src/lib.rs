@@ -4,12 +4,10 @@
 mod ffi;
 pub mod trails;
 
-pub const DEFAULT_MAX_TABS: usize = 3;
 pub const DEFAULT_SEARCH: &str = "https://www.google.com/search?q=%s";
 
 #[derive(Debug, PartialEq)]
 pub struct Config {
-    pub max_tabs: usize,
     pub max_trails: usize,
     pub restore_session: bool,
     pub search: String,
@@ -33,12 +31,11 @@ pub struct Window {
 
 impl Default for Config {
     fn default() -> Self {
-        Config { max_tabs: DEFAULT_MAX_TABS, max_trails: trails::DEFAULT_MAX_TRAILS, restore_session: true, search: DEFAULT_SEARCH.into(), blocks: vec![] }
+        Config { max_trails: trails::DEFAULT_MAX_TRAILS, restore_session: true, search: DEFAULT_SEARCH.into(), blocks: vec![] }
     }
 }
 
 /// Config format, one directive per line, `#` comments:
-///   max_tabs = 3
 ///   max_trails = 3
 ///   restore_session = true
 ///   search = https://duckduckgo.com/?q=%s
@@ -68,11 +65,13 @@ pub fn parse_config(text: &str) -> Result<Config, String> {
         if let Some((key, val)) = line.split_once('=') {
             let val = val.trim();
             match key.trim() {
-                "max_tabs" => {
-                    cfg.max_tabs = val.parse().ok().filter(|n| *n > 0).ok_or_else(|| err("max_tabs must be a positive integer"))?
-                }
+                // Left over from the tabs era. Rejecting it would make the shell fall back to
+                // the default config, which silently drops every block rule.
+                "max_tabs" => {}
+                // Clamped, not rejected: a parse error drops the blocklist along with it.
                 "max_trails" => {
-                    cfg.max_trails = val.parse().ok().filter(|n| *n > 0).ok_or_else(|| err("max_trails must be a positive integer"))?
+                    let n: usize = val.parse().ok().filter(|n| *n > 0).ok_or_else(|| err("max_trails must be a positive integer"))?;
+                    cfg.max_trails = n.min(trails::MAX_TRAILS)
                 }
                 "restore_session" => {
                     cfg.restore_session = val.parse().map_err(|_| err("restore_session must be true or false"))?
@@ -233,22 +232,35 @@ mod tests {
 
     #[test]
     fn parses_config() {
-        let c = cfg("# focus\nmax_tabs = 2\nsearch = https://d.com/?q=%s\nblock *.X.com\nblock yt.com 09:00-18:00 mon-fri # work\n");
-        assert_eq!(c.max_tabs, 2);
+        let c = cfg("# focus\nsearch = https://d.com/?q=%s\nblock *.X.com\nblock yt.com 09:00-18:00 mon-fri # work\n");
         assert!(c.restore_session);
         assert_eq!((c.max_trails, cfg("max_trails = 4").max_trails), (3, 4));
         assert!(!cfg("restore_session = false").restore_session);
         assert_eq!(c.search, "https://d.com/?q=%s");
         assert_eq!(c.blocks[0], Block { domain: "x.com".into(), window: None });
         assert_eq!(c.blocks[1].window, Some(Window { days: 0b1_1111, start: 540, end: 1080 }));
-        assert_eq!(cfg("").max_tabs, DEFAULT_MAX_TABS);
         assert_eq!(cfg("block a.com 22:00-02:00 sat,sun").blocks[0].window.as_ref().unwrap().days, 0b110_0000);
         assert_eq!(cfg("block a.com 00:00-24:00 fri-mon").blocks[0].window.as_ref().unwrap().days, 0b111_0001);
     }
 
     #[test]
+    fn a_leftover_max_tabs_line_keeps_the_blocklist() {
+        let c = cfg("max_tabs = 3\nblock x.com\n");
+        assert_eq!(c.blocks, [Block { domain: "x.com".into(), window: None }]);
+        assert_eq!(c.max_trails, trails::DEFAULT_MAX_TRAILS);
+    }
+
+    #[test]
+    fn max_trails_above_the_nine_trail_colours_is_capped_and_keeps_the_blocklist() {
+        let c = cfg("max_trails = 10\nblock x.com\n");
+        assert_eq!(c.max_trails, trails::MAX_TRAILS);
+        assert_eq!(c.blocks, [Block { domain: "x.com".into(), window: None }]);
+        assert_eq!(cfg("max_trails = 9").max_trails, 9);
+    }
+
+    #[test]
     fn rejects_bad_config_with_line_number() {
-        for bad in ["max_tabs = 0", "max_trails = 0", "restore_session = maybe", "search = x", "block", "block a.com 9-5", "block a.com 09:00-25:00", "block a.com 09:00-17:00 funday", "blok a.com", "colour = red"] {
+        for bad in ["max_trails = 0", "restore_session = maybe", "search = x", "block", "block a.com 9-5", "block a.com 09:00-25:00", "block a.com 09:00-17:00 funday", "blok a.com", "colour = red"] {
             assert!(parse_config(&format!("\n{bad}")).unwrap_err().starts_with("config line 2:"), "{bad}");
         }
     }

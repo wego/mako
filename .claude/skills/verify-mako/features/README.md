@@ -5,7 +5,7 @@ One recipe per user-facing feature. Read this index, then drive the matching fil
 ## Baseline preconditions
 
 - `control-mako build` ran against the current checkout.
-- `control-mako launch` started a fresh instance with the default disposable config (`max_tabs = 3`, `block x.com`) unless a recipe says otherwise. Fresh means no saved session, so only the launch URL is open.
+- `control-mako launch` started a fresh instance with the default disposable config (`max_trails = 3`, `block x.com`) unless a recipe says otherwise. Fresh means no saved session, so only the launch URL is open.
 - `control-mako doctor` prints `OK`.
 - `P=$(control-mako pid)` and `M=verify-runs/.bin/makoctl` are set.
 - Network access to `example.com` and `www.google.com`.

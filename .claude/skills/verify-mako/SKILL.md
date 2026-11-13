@@ -17,7 +17,7 @@ The terminal running the agent needs macOS Accessibility and Screen Recording pe
 
 ```sh
 $C build                        # script/bundle (Rust release lib + Swift app) + compiles makoctl
-$C launch                       # default disposable config: max_tabs = 3, block x.com
+$C launch                       # default disposable config: max_trails = 3, block x.com
 $C launch "" https://example.com             # default config, start URL
 $C launch path/to/config https://example.com   # custom config and start URLs
 P=$($C pid); M=verify-runs/.bin/makoctl
@@ -80,7 +80,7 @@ Kills only the PID this run launched and removes `$MAKO_RUN/state` and the run's
 .claude/skills/verify-mako/scripts/trails-bg
 ```
 
-`trails-bg` checks trails behaviour (links nest, in-place navigation, restart restore, lazy loading, trail cap, blocked links) without taking focus and without Accessibility or Screen Recording permission.
+`trails-bg` checks trails behaviour (links nest, in-place navigation, restart restore, lazy loading, trail cap, blocked links, trail colours, site icons) without taking focus and without Accessibility or Screen Recording permission.
 
 `.claude/skills/verify-mako/scripts/dialogs-bg` checks, the same way, that `alert()`, `confirm()` and `prompt()` wait for the person (see `features/dialogs.md`). `.claude/skills/verify-mako/scripts/dialogs-ax` answers them through accessibility actions and checks that silencing a page does not carry to the next page in the same view; it needs Accessibility permission.
 
@@ -89,6 +89,8 @@ Kills only the PID this run launched and removes `$MAKO_RUN/state` and the run's
 ```
 
 `trails-ax` drives the sidebar, omnibox, close and Undo Close through accessibility actions, also without focus; it needs Accessibility permission. Run both after any change to navigation, the tree or the sidebar; they are safe while the person is using the Mac. With `MAKO_BACKGROUND=1`, `control-mako` and `makoctl` work without focus for your own steps too (see `docs/control.md`).
+
+`ux-headed` covers what needs a real pointer or key press: middle-clicks on page content and sidebar rows, ⌘1…⌘9, and the omnibox with a long address. It takes focus for about a minute.
 
 `smoke`, `perf` and `ab` below predate trails and fail until rewritten (see `features/trails.md`, Gotchas).
 

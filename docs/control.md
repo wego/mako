@@ -34,6 +34,7 @@ $C stop
 - The copy has no `http`/`https` URL handlers, so macOS never offers it for links you open. It is re-signed ad hoc, so it never carries the passkey entitlement even when the daily build does.
 - `launch` starts the run with no website data; `stop` deletes that data (`~/Library/{WebKit,Caches,HTTPStorages,Preferences}/com.wego.mako.verify.<run>*`). Data persists across `quit` and `relaunch` within a run.
 - `MAKO_CONFIG` points at `verify-runs/<run>/state/config`, so your `~/.config/mako/config` and `session.json` are never read or written.
+- `MAKO_DOWNLOADS` points at `verify-runs/<run>/state/downloads`, so a run's downloads never land in your Downloads folder.
 - `makoctl` targets a process ID, never an app name, so it cannot reach another Mako by accident.
 
 `smoke` proves this on every run: a cookie set in one run is invisible to a second run, and your daily Mako's data files are unchanged afterwards.
@@ -45,7 +46,7 @@ $C stop
 | Command | What it does |
 | --- | --- |
 | `control-mako build` | Runs `script/bundle` (Rust core + Swift app) and compiles `makoctl` into `verify-runs/.bin/`. |
-| `control-mako launch [config-file\|""] [url...]` | Fresh state (config, session, and website data), then start the run's own app copy. `""` uses the default test config (`max_tabs = 3`, `block x.com`); a file path copies that config. URLs open at launch. Refuses if this run already has a live instance. Prints `pid <n> ready`. |
+| `control-mako launch [config-file\|""] [url...]` | Fresh state (config, session, and website data), then start the run's own app copy. `""` uses the default test config (`max_trails = 3`, `block x.com`); a file path copies that config. URLs open at launch. Refuses if this run already has a live instance. Prints `pid <n> ready`. |
 | `control-mako pid` | Prints the running instance's pid. |
 | `control-mako doctor` | Read-only health check: process alive, it is this checkout's build, AX answers, screenshots work. Prints `OK …` or `FAIL <reason>`. Run it first and after anything surprising. |
 | `control-mako quit` | Graceful ⌘Q through the menu, so Mako saves its session. Waits for exit. Keeps `state/`. |
@@ -64,15 +65,17 @@ Every command is `makoctl <pid> <command> [args]`. Commands that send input (`ke
 | --- | --- |
 | `makoctl <pid> title` | The window's AX title: the active page's label (its name, else its title, else its address), or `Mako` when no page is open. |
 | `makoctl <pid> wait-title <substring> [seconds]` | Polls every 50 ms until the title contains the substring (default 10 s). Prints the title; exit 5 on timeout. The standard way to wait for a page load or tab change. |
-| `makoctl <pid> tree [depth] [--menus]` | The AX tree, one element per line: role, subrole, `id=`, `title=`, `desc=`, `value=`. Default depth 12. Web page content appears under `AXWebArea`. `--menus` includes the menu bar. |
+| `makoctl <pid> tree [depth] [--menus]` | The AX tree, one element per line: role, subrole, `id=`, `title=`, `desc=`, `value=`. Default depth 12. Web page content appears under `AXWebArea`. `--menus` includes the menu bar; a menu item with a shortcut shows its key as `cmd="1"`. |
 | `makoctl <pid> value <ax-identifier>` | The `AXValue` of the element with that identifier, e.g. the omnibox text, or `1`/`0` for a checkbox. Exit 4 if absent. |
 | `makoctl <pid> exists <ax-identifier>` | Exit 0 if an element with that identifier is in the tree, 4 otherwise. Hidden elements can still exist; use `shot` to prove visibility. |
 | `makoctl <pid> text` | The active page's visible text, untruncated, one line per text run (`tree` shortens values to 80 characters). |
 | `makoctl <pid> menu-items <Menu>` | One line per item in a menu bar menu; the checked item starts with `*`. `menu-items Tabs` lists open tabs with the active one checked. Does not open the menu. |
 | `makoctl <pid> windows` | One line per window. Sign-in popups carry `id="mako.popup"`. |
 | `makoctl <pid> pointer-center` | Moves the mouse pointer over the middle of the page. Perf runs use it so cursor-update costs are measured the same way every time. Moves the user's real pointer. |
-| `makoctl <pid> shot <path.png>` | Screenshot of Mako's main window, even if other apps cover it. Exit 6 without Screen Recording permission. |
+| `makoctl <pid> shot <path.png>` | Screenshot of Mako's main window, even if other apps cover it. Exit 6 without Screen Recording permission. The only command that works without Accessibility permission. |
 | `makoctl <pid> click-id <ax-identifier> [fx fy]` | Real mouse click at a point inside the element: `fx`/`fy` are fractions of its frame (default the centre). For a stepper, `0.5 0.25` hits the up arrow and `0.5 0.75` the down arrow. Activates Mako and moves the user's real pointer, so it is refused with `MAKO_BACKGROUND=1` (exit 9). |
+| `makoctl <pid> middle-click-id <ax-identifier> [fx fy]` | Real middle-button click inside the element, like `click-id`: `middle-click-id mako.trail.3` closes that page. Activates Mako, moves the pointer, refused with `MAKO_BACKGROUND=1`. |
+| `makoctl <pid> middle-click <x> <y>` | Real middle-button click at `x`,`y` points from the top-left of `mako.page` (CSS pixels at 100% zoom), for page content such as the `fixtures/trails/m.html` targets. Same focus rules as `click-id`. |
 
 ### Acting
 
@@ -115,7 +118,8 @@ Stable identifiers Mako sets for automation. Prefer these, menu titles, and the 
 | --- | --- |
 | `mako.page` | Container for the active tab's page. |
 | `mako.sidebar` | The trails sidebar. |
-| `mako.trail.<id>` | A sidebar row (a page). `id` is the page's permanent id, not a position. Its AX value is `selected` on the active page. |
+| `mako.trail.<id>` | A sidebar row (a page). `id` is the page's permanent id, not a position. Its AX value is `selected` on the active page; its AX help is `site icon` once the site's icon has arrived, `no site icon` before. |
+| `mako.sidebar.load` | The note at the sidebar's foot, present only at the trail cap. Value `🧠 <open>/<max>`. |
 | `mako.trail.<id>.toggle` | That row's collapse/expand control (only when it has pages beneath it). |
 | `mako.trail.<id>.name` | The text field that replaces a row's label while it is being renamed (Trails → Rename Page…). `set` it, then `confirm` it. |
 | `mako.divider` | The edge between sidebar and page. Its value is the sidebar width in points; `set mako.divider 300` resizes it (kept between 160 and 480). |
@@ -127,7 +131,7 @@ Stable identifiers Mako sets for automation. Prefer these, menu titles, and the 
 | `mako.blank` | The app icon shown when no page is open. |
 | `mako.popup` | A sign-in popup window. |
 
-Menu bar: `Mako` (About Mako, Settings… ⌘., Edit Config File… ⌘,, Hide, Quit), `File` (New Trail, New Page in Trail, Open Location…, Close Page, Reopen Closed Page), `Edit` (… Find…, Find Next, Find Previous), `View` (Reload, Zoom In/Out, Actual Size, Developer Console), `History` (Back, Forward), `Trails` (Next Page, Previous Page, Move Page Up, Move Page Down, Indent Page, Outdent Page, Rename Page…, then one item per visible page, indented by depth, the active one checked).
+Menu bar: `Mako` (About Mako, Settings… ⌘., Edit Config File… ⌘,, Hide, Quit), `File` (New Trail, New Page in Trail, Open Location…, Close Page, Reopen Closed Page), `Edit` (… Find…, Find Next, Find Previous), `View` (Reload, Zoom In/Out, Actual Size, Developer Console), `History` (Back, Forward), `Trails` (Next Page, Previous Page, Move Page Up, Move Page Down, Indent Page, Outdent Page, Rename Page…, then one item per visible page, indented by depth, the active one checked). A trail's root item carries ⌘1…⌘9 and jumps: to the root, or from the root to the trail's last page. So `menu Trails "<root label>"` pressed while that root is active goes to the last page.
 
 ## Recipes
 
@@ -206,13 +210,14 @@ Set `MAKO_BACKGROUND=1` for both tools. `control-mako launch` then starts the te
 
 ## Trails state on disk
 
-`trails.json` sits beside the config (`verify-runs/<run>/state/trails.json` for test runs). It is the core's whole state: `roots`, `nodes` (each with `parent`, `children`, `url`, `title`), `active`, and `closed` (the Undo Close stack). It is rewritten after every change, so reading it is the most direct way to assert the tree.
+`trails.json` sits beside the config (`verify-runs/<run>/state/trails.json` for test runs). It is the core's whole state: `roots`, `nodes` (each with `parent`, `children`, `url`, `title`), `active`, `closed` (the Undo Close stack), and `colors` (each trail's colour slot, keyed by root id). It is rewritten after every change, so reading it is the most direct way to assert the tree.
 
 ## Verification and performance
 
-- `scripts/trails-bg`: trails behaviour (links nest, restart restore, lazy loading, trail cap, blocked links, form submits) with no focus and no permissions. 18 checks.
-- `scripts/trails-ax`: the trails UI through accessibility actions, no focus: sidebar rows, collapse, omnibox, trail cap, close, Undo Close across a restart, moving and renaming pages, sidebar width, find in page. 36 checks. Needs Accessibility permission.
-- `scripts/dialogs-ax`: page dialogs through accessibility actions, no focus: silencing a page with the dialog checkbox does not silence the next page loaded in the same view. 5 checks. Needs Accessibility permission.
+- `scripts/trails-bg`: trails behaviour (links nest, restart restore, lazy loading, trail cap, blocked links, form submits, trail colours, site icons) with no focus and no permissions. 24 checks.
+- `scripts/trails-ax`: the trails UI through accessibility actions, no focus: sidebar rows, collapse, omnibox, trail cap, close, Undo Close across a restart, moving and renaming pages, sidebar width, find in page, ⌘1…⌘9 jumps through the Trails menu, the 🧠 note at the cap. 48 checks. Needs Accessibility permission.
+- `scripts/ux-headed`: middle-clicks on page content (`fixtures/trails/m.html`) and sidebar rows, ⌘1…⌘9 as keys, the omnibox with a long address. Takes the pointer and keyboard; needs Accessibility.
+- `scripts/dialogs-ax`: page dialogs through accessibility actions, no focus: silencing with the dialog checkbox, lifted only by a navigation the person starts from Mako (address bar, Back, Forward, Reload), never by the page reloading itself or a same-document Back. 17 checks. Needs Accessibility permission.
 - `scripts/smoke`: every feature recipe in `.claude/skills/verify-mako/features/`, then `perf`. One `PASS`/`FAIL` line per check; exit status is the number of failures. Takes focus for about 3 minutes.
 - `scripts/perf`: performance budgets (launch, new tab, tab switch, memory, bundle size, Rust core). See the top of the script for the numbers.
 - `scripts/ab <base-checkout> <candidate-checkout> [rounds]`: paired A/B of in-app latency (launch, new tab, tab switch) between two built checkouts, interleaving launches so background load hits both alike. Prints medians, the median paired delta, and how often the candidate won. Use it to decide whether a change is faster; a single `perf` run is too noisy on a busy Mac.

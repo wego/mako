@@ -29,13 +29,14 @@ pub extern "C" fn mako_restore_session(cfg: *const c_char) -> bool {
 }
 
 #[no_mangle]
-pub extern "C" fn mako_max_tabs(cfg: *const c_char) -> u32 {
-    config(cfg).max_tabs as u32
-}
-
-#[no_mangle]
 pub extern "C" fn mako_max_trails(cfg: *const c_char) -> u32 {
     config(cfg).max_trails as u32
+}
+
+/// The highest max_trails the config accepts.
+#[no_mangle]
+pub extern "C" fn mako_trail_limit() -> u32 {
+    trails::MAX_TRAILS as u32
 }
 
 /// Config text with `key = value` set; the shell writes it back to the file.

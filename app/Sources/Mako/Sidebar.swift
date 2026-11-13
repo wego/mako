@@ -2,6 +2,15 @@ import AppKit
 
 private let pageDragType = NSPasteboard.PasteboardType("com.wego.mako.page")
 
+extension NSColor {
+    /// Trail colours by the core's slot. System colours, so each adapts to light and dark.
+    static func trail(_ slot: Int) -> NSColor {
+        let palette: [NSColor] = [.systemBlue, .systemOrange, .systemGreen, .systemPurple, .systemPink,
+                                  .systemTeal, .systemYellow, .systemIndigo, .systemBrown]
+        return palette[slot % palette.count]
+    }
+}
+
 /// Where a dragged page lands relative to the row it is dropped on. Raw values are the core's.
 enum DropPlace: String { case before, after, inside }
 
@@ -13,8 +22,13 @@ final class Sidebar: NSView {
     var onRename: (UInt64, String) -> Void = { _, _ in }
     var onClose: (UInt64) -> Void = { _ in }
     var onPlace: (_ page: UInt64, _ target: UInt64, DropPlace) -> Void = { _, _, _ in }
+    var iconFor: (TrailRow) -> NSImage? = { _ in nil }
 
     private let stack = NSStackView()
+    /// Shown only at the trail cap: a quiet note, not an alarm.
+    private let load = NSTextField(labelWithString: "")
+    private var rowsToBottom: NSLayoutConstraint!
+    private var rowsToLoad: NSLayoutConstraint!
     private var rowViews: [UInt64: RowView] = [:]
     private var generation = 0
 
@@ -31,16 +45,28 @@ final class Sidebar: NSView {
         let scroll = NSScrollView()
         scroll.drawsBackground = false
         scroll.hasVerticalScroller = true
+        scroll.autohidesScrollers = true
         scroll.documentView = document
         scroll.translatesAutoresizingMaskIntoConstraints = false
         addSubview(scroll)
+        load.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+        load.textColor = .secondaryLabelColor
+        load.toolTip = "At your trail limit – finish or close a trail to start another"
+        load.setAccessibilityIdentifier("mako.sidebar.load")
+        load.isHidden = true
+        load.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(load)
+        rowsToBottom = scroll.bottomAnchor.constraint(equalTo: bottomAnchor)
+        rowsToLoad = scroll.bottomAnchor.constraint(equalTo: load.topAnchor, constant: -6)
         setAccessibilityElement(true)
         setAccessibilityRole(.list)
         setAccessibilityIdentifier("mako.sidebar")
         setAccessibilityLabel("Trails")
         NSLayoutConstraint.activate([
             scroll.topAnchor.constraint(equalTo: topAnchor),
-            scroll.bottomAnchor.constraint(equalTo: bottomAnchor),
+            rowsToBottom,
+            load.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
+            load.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -10),
             scroll.leadingAnchor.constraint(equalTo: leadingAnchor),
             scroll.trailingAnchor.constraint(equalTo: trailingAnchor),
             document.topAnchor.constraint(equalTo: scroll.contentView.topAnchor),
@@ -63,15 +89,29 @@ final class Sidebar: NSView {
         stack.arrangedSubviews.forEach { $0.removeFromSuperview() }
         guard mine == generation else { return }
         rowViews = [:]
-        for row in rows {
-            let view = RowView(row, sidebar: self)
+        for (i, row) in rows.enumerated() {
+            let view = RowView(row, endsTrail: rows.indices.contains(i + 1) ? rows[i + 1].depth == 0 : true, sidebar: self)
             rowViews[row.id] = view
+            view.setIcon(iconFor(row))
             stack.addArrangedSubview(view)
             view.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -12).isActive = true
         }
     }
 
     func beginRename(_ id: UInt64) { rowViews[id]?.beginRename() }
+
+    /// Open trails against the cap; the note shows once no new trail fits.
+    func showLoad(trails: Int, max: Int) {
+        let full = trails >= max
+        load.stringValue = "🧠 \(trails)/\(max)"
+        guard load.isHidden == full else { return }
+        load.isHidden = !full
+        rowsToBottom.isActive = !full
+        rowsToLoad.isActive = full
+    }
+
+    /// Icons arrive after the rows are drawn; updating in place keeps a rename in progress.
+    func refreshIcons() { rowViews.values.forEach { $0.setIcon(iconFor($0.row)) } }
 }
 
 final class FlippedView: NSView {
@@ -82,7 +122,10 @@ final class FlippedView: NSView {
 /// (with the pages beneath it) before, after, or inside another page.
 @MainActor
 private final class RowView: NSView, NSDraggingSource, NSTextFieldDelegate {
-    private let row: TrailRow
+    let row: TrailRow
+    private let icon = NSImageView()
+    /// The last row of its trail: the rail's rounded bottom.
+    private let endsTrail: Bool
     private unowned let sidebar: Sidebar
     private let label: NSTextField
     private var hovered = false { didSet { needsDisplay = true } }
@@ -90,8 +133,9 @@ private final class RowView: NSView, NSDraggingSource, NSTextFieldDelegate {
     private var mouseDownAt: NSPoint?
     private var editor: NSTextField?
 
-    init(_ row: TrailRow, sidebar: Sidebar) {
+    init(_ row: TrailRow, endsTrail: Bool, sidebar: Sidebar) {
         self.row = row
+        self.endsTrail = endsTrail
         self.sidebar = sidebar
         label = NSTextField(labelWithString: row.label)
         super.init(frame: .zero)
@@ -111,16 +155,23 @@ private final class RowView: NSView, NSDraggingSource, NSTextFieldDelegate {
         // The row itself is the accessibility element, not its text.
         label.setAccessibilityElement(false)
 
-        for view in [toggle, label] {
+        icon.imageScaling = .scaleProportionallyUpOrDown
+        icon.setAccessibilityElement(false)
+
+        for view in [toggle, icon, label] {
             view.translatesAutoresizingMaskIntoConstraints = false
             addSubview(view)
         }
         NSLayoutConstraint.activate([
             heightAnchor.constraint(equalToConstant: 26),
-            toggle.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 4 + CGFloat(row.depth) * 14),
+            toggle.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8 + CGFloat(row.depth) * 14),
             toggle.widthAnchor.constraint(equalToConstant: 14),
             toggle.centerYAnchor.constraint(equalTo: centerYAnchor),
-            label.leadingAnchor.constraint(equalTo: toggle.trailingAnchor, constant: 2),
+            icon.leadingAnchor.constraint(equalTo: toggle.trailingAnchor, constant: 2),
+            icon.widthAnchor.constraint(equalToConstant: 16),
+            icon.heightAnchor.constraint(equalToConstant: 16),
+            icon.centerYAnchor.constraint(equalTo: centerYAnchor),
+            label.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 6),
             label.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
             label.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
@@ -134,6 +185,15 @@ private final class RowView: NSView, NSDraggingSource, NSTextFieldDelegate {
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
+
+    /// The site's icon, or a faint globe holding its place until one arrives.
+    func setIcon(_ image: NSImage?) {
+        icon.image = image ?? Self.globe
+        icon.contentTintColor = image == nil ? .tertiaryLabelColor : nil
+        setAccessibilityHelp(image == nil ? "no site icon" : "site icon")
+    }
+    private static let globe = NSImage(systemSymbolName: "globe", accessibilityDescription: nil)?
+        .withSymbolConfiguration(.init(pointSize: 12, weight: .light))
 
     override func accessibilityPerformPress() -> Bool {
         sidebar.onSelect(row.id)
@@ -151,14 +211,21 @@ private final class RowView: NSView, NSDraggingSource, NSTextFieldDelegate {
     // MARK: Looks
 
     override func draw(_ dirtyRect: NSRect) {
+        let color = NSColor.trail(row.color)
         let shape = NSBezierPath(roundedRect: bounds, xRadius: 6, yRadius: 6)
         if row.active {
-            NSColor.controlAccentColor.withAlphaComponent(0.22).setFill()
+            color.withAlphaComponent(0.2).setFill()
             shape.fill()
         } else if hovered || drop == .inside {
             NSColor.labelColor.withAlphaComponent(drop == .inside ? 0.16 : 0.07).setFill()
             shape.fill()
         }
+        // One rail per trail down the leading edge, rounded only where the trail starts and ends.
+        // It reaches across the 1 pt gap below so consecutive rows join up.
+        let top = row.depth == 0, bottom = endsTrail
+        let rail = NSRect(x: 0, y: bottom ? 3 : -1, width: 3, height: bounds.height - (bottom ? 3 : -1) - (top ? 3 : 0))
+        color.withAlphaComponent(0.75).setFill()
+        NSBezierPath(roundedRect: rail, xRadius: top || bottom ? 1.5 : 0, yRadius: top || bottom ? 1.5 : 0).fill()
         if let drop, drop != .inside {
             NSColor.controlAccentColor.setFill()
             NSRect(x: 4, y: drop == .before ? bounds.maxY - 2 : 0, width: bounds.width - 8, height: 2).fill()
@@ -229,6 +296,14 @@ private final class RowView: NSView, NSDraggingSource, NSTextFieldDelegate {
     func controlTextDidEndEditing(_ note: Notification) {
         // Enter has already sent the action (and the row is being rebuilt); anything else cancels.
         if (note.userInfo?["NSTextMovement"] as? Int) != NSTextMovement.return.rawValue { endRename() }
+    }
+
+    /// Middle-click closes the page, like its context menu's Close; ⇧⌘T brings it back.
+    override func otherMouseDown(with event: NSEvent) {
+        if event.buttonNumber != 2 { super.otherMouseDown(with: event) }
+    }
+    override func otherMouseUp(with event: NSEvent) {
+        if event.buttonNumber == 2 { sidebar.onClose(row.id) } else { super.otherMouseUp(with: event) }
     }
 
     override func menu(for event: NSEvent) -> NSMenu? {

@@ -10,6 +10,8 @@ struct TrailRow {
     let active: Bool
     let collapsed: Bool
     let hasChildren: Bool
+    /// The trail's colour slot; the shell maps it onto its palette.
+    let color: Int
 
     init?(_ json: [String: Any]) {
         guard let id = json["id"] as? UInt64, let depth = json["depth"] as? Int,
@@ -22,6 +24,7 @@ struct TrailRow {
         active = json["active"] as? Bool ?? false
         collapsed = json["collapsed"] as? Bool ?? false
         hasChildren = json["has_children"] as? Bool ?? false
+        color = json["color"] as? Int ?? 0
     }
 }
 
