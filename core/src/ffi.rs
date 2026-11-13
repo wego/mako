@@ -107,6 +107,33 @@ mod tests {
     }
     fn c(s: &str) -> CString { CString::new(s).unwrap() }
 
+    fn config_error(config: &str) -> Option<String> {
+        let config = c(config);
+        let p = mako_config_error(config.as_ptr());
+        let error = (!p.is_null()).then(|| unsafe { text(p) }.to_string());
+        mako_free(p);
+        error
+    }
+
+    #[test]
+    fn config_error_names_the_first_issue_and_counts_the_rest() {
+        assert_eq!(config_error("max_trails = 2\nblock x.com\n"), None);
+        assert_eq!(config_error("max_trails = 2\ncolour = red\n").unwrap(), "config line 2: unknown setting: `colour = red`");
+        assert_eq!(
+            config_error("max_trails = 2\ncolour = red\nblok a.com\nblock b.com 09:00-25:00\n").unwrap(),
+            "config line 2: unknown setting: `colour = red` (and 2 more)"
+        );
+    }
+
+    #[test]
+    fn a_bad_line_does_not_unblock_through_the_c_abi() {
+        let (config, host) = (c("colour = red\nblock x.com 09:00-25:00\nmax_trails = 2\n"), c("x.com"));
+        let reason = mako_blocked(config.as_ptr(), host.as_ptr(), 6, 3 * 60);
+        assert_eq!(unsafe { text(reason) }, "x.com is blocked.");
+        mako_free(reason);
+        assert_eq!(mako_max_trails(config.as_ptr()), 2);
+    }
+
     #[test]
     fn trails_round_trip_through_the_c_abi() {
         let fresh = call(|| mako_trails_load(std::ptr::null()));

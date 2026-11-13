@@ -211,8 +211,19 @@ fn encode(s: &str) -> String {
 mod tests {
     use super::*;
 
+    /// A config with no issues: every line in `t` must be valid.
     fn cfg(t: &str) -> Config {
-        parse_config(t).unwrap()
+        let parsed = parse_config(t);
+        assert_eq!(parsed.issues, [], "{t}");
+        parsed.config
+    }
+
+    fn always(domain: &str) -> Block {
+        Block { domain: domain.into(), window: None }
+    }
+
+    fn blocked_all_week(c: &Config, host: &str) -> bool {
+        (0..7).all(|day| [0, 9 * 60, 12 * 60, 23 * 60 + 59].iter().all(|m| blocked(c, host, day, *m).is_some()))
     }
 
     #[test]
@@ -259,10 +270,57 @@ mod tests {
     }
 
     #[test]
-    fn rejects_bad_config_with_line_number() {
+    fn reports_each_bad_line_with_its_number_and_text() {
         for bad in ["max_trails = 0", "restore_session = maybe", "search = x", "block", "block a.com 9-5", "block a.com 09:00-25:00", "block a.com 09:00-17:00 funday", "blok a.com", "colour = red"] {
-            assert!(parse_config(&format!("\n{bad}")).unwrap_err().starts_with("config line 2:"), "{bad}");
+            let issues = parse_config(&format!("\n{bad}")).issues;
+            assert_eq!(issues.len(), 1, "{bad}");
+            assert_eq!(issues[0].line, 2, "{bad}");
+            assert!(issues[0].message.starts_with("config line 2: "), "{bad}: {}", issues[0].message);
+            assert!(issues[0].message.ends_with(&format!(": `{bad}`")), "{bad}: {}", issues[0].message);
         }
+    }
+
+    #[test]
+    fn a_typo_line_keeps_the_blocklist() {
+        let parsed = parse_config("colour = red\nblock x.com\n");
+        assert_eq!(parsed.config.blocks, [always("x.com")]);
+        assert!(blocked_all_week(&parsed.config, "x.com"));
+        assert_eq!(parsed.issues, [Issue { line: 1, message: "config line 1: unknown setting: `colour = red`".into() }]);
+    }
+
+    #[test]
+    fn a_bad_schedule_blocks_the_domain_at_all_times() {
+        for line in ["block youtube.com 09:00-25:00", "block youtube.com 09:00-17:00 funday", "block youtube.com 9-5", "block youtube.com 09:00-17:00 mon extra"] {
+            let parsed = parse_config(line);
+            assert_eq!(parsed.config.blocks, [always("youtube.com")], "{line}");
+            assert!(blocked_all_week(&parsed.config, "www.youtube.com"), "{line}");
+            assert_eq!(parsed.issues.len(), 1, "{line}");
+            assert_eq!(parsed.issues[0].line, 1, "{line}");
+        }
+    }
+
+    #[test]
+    fn a_block_line_without_a_domain_is_an_issue_and_other_blocks_stay() {
+        let parsed = parse_config("block x.com\nblock\nblock y.com\n");
+        assert_eq!(parsed.config.blocks, [always("x.com"), always("y.com")]);
+        assert_eq!(parsed.issues.iter().map(|i| i.line).collect::<Vec<_>>(), [2]);
+    }
+
+    #[test]
+    fn a_bad_value_keeps_that_default_and_applies_every_other_line() {
+        let parsed = parse_config("max_trails = abc\nrestore_session = false\nsearch = https://d.com/?q=%s\nblock x.com\n");
+        assert_eq!(parsed.config.max_trails, trails::DEFAULT_MAX_TRAILS);
+        assert!(!parsed.config.restore_session);
+        assert_eq!(parsed.config.search, "https://d.com/?q=%s");
+        assert_eq!(parsed.config.blocks, [always("x.com")]);
+        assert_eq!(parsed.issues, [Issue { line: 1, message: "config line 1: max_trails must be a positive integer: `max_trails = abc`".into() }]);
+    }
+
+    #[test]
+    fn several_bad_lines_are_all_reported_in_file_order() {
+        let parsed = parse_config("# mine\ncolour = red\nblock x.com\nmax_trails = -1\nblok y.com\n\nblock z.com 25:00-26:00\n");
+        assert_eq!(parsed.issues.iter().map(|i| i.line).collect::<Vec<_>>(), [2, 4, 5, 7]);
+        assert_eq!(parsed.config.blocks, [always("x.com"), always("z.com")]);
     }
 
     #[test]
@@ -289,7 +347,7 @@ mod tests {
         let text: String = (0..500).map(|i| format!("block site{i}.example 09:00-18:00 weekdays\n")).collect();
         let start = std::time::Instant::now();
         for i in 0..1_000 {
-            let c = parse_config(&text).unwrap();
+            let c = parse_config(&text).config;
             std::hint::black_box(blocked(&c, &format!("www.site{}.example", i % 600), 0, 600));
         }
         let per_call = start.elapsed() / 1_000;
