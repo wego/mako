@@ -40,6 +40,7 @@ final class Sidebar: NSView {
         let scroll = NSScrollView()
         scroll.drawsBackground = false
         scroll.hasVerticalScroller = true
+        scroll.autohidesScrollers = true
         scroll.documentView = document
         scroll.translatesAutoresizingMaskIntoConstraints = false
         addSubview(scroll)

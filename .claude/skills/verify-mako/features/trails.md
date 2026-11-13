@@ -19,6 +19,7 @@ Trails replace tabs. A trail is a tree of pages in the sidebar: a followed link 
 - `trail-rename` double-click a row, right-click → Rename…, or Trails → Rename Page…; Enter saves, Escape cancels, an empty name goes back to the page title.
 - `trail-background-link` ⌘-click opens the link beneath the page without leaving it.
 - `trail-colors` each open trail has its own colour (`colors` in `trails.json`, keyed by root id): a rail down the rows' leading edge, the active row tinted with it, a dot on its Trails menu item. A trail keeps its colour while others close or move; a new trail takes the lowest free one.
+- `sidebar-scroller` the sidebar shows a scroller only when its rows overflow, even with "Show scroll bars: Always".
 - `sidebar-width` the sidebar starts at a fifth of the window (200–320 pt), drags by its edge, and keeps its width across restarts.
 - `find` ⌘F finds in the page from the omnibox; Enter or ⌘G next, ⇧⌘G previous.
 - `download` a file WebKit cannot show is saved to `~/Downloads`.
