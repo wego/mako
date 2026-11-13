@@ -629,6 +629,47 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         window.makeFirstResponder(omnibox.isHidden ? shown : field)
     }
 
+    func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String,
+                 initiatedByFrame frame: WKFrameInfo) async {
+        _ = await ask(message, from: frame, in: webView, cancellable: false)
+    }
+
+    func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String,
+                 initiatedByFrame frame: WKFrameInfo) async -> Bool {
+        await ask(message, from: frame, in: webView, cancellable: true) != nil
+    }
+
+    func webView(_ webView: WKWebView, runJavaScriptTextInputPanelWithPrompt prompt: String,
+                 defaultText: String?, initiatedByFrame frame: WKFrameInfo) async -> String? {
+        let input = NSTextField(string: defaultText ?? "")
+        input.frame = NSRect(x: 0, y: 0, width: 260, height: 24)
+        input.setAccessibilityIdentifier("mako.dialog.field")
+        return await ask(prompt, from: frame, in: webView, cancellable: true, input: input)
+    }
+
+    /// A page dialog as a sheet on the page's own window. nil when cancelled.
+    private func ask(_ message: String, from frame: WKFrameInfo, in webView: WKWebView,
+                     cancellable: Bool, input: NSTextField? = nil) async -> String? {
+        let host = frame.securityOrigin.host
+        // A page in a trail that isn't shown has no window; answering for it, as WebKit
+        // would, beats pulling the person to a page they didn't pick.
+        guard let window = webView.window else {
+            log.info("dialog from \(host, privacy: .public) dismissed: page not shown")
+            return nil
+        }
+        let alert = NSAlert()
+        alert.messageText = message
+        alert.informativeText = host
+        alert.addButton(withTitle: "OK").setAccessibilityIdentifier("mako.dialog.ok")
+        if cancellable { alert.addButton(withTitle: "Cancel").setAccessibilityIdentifier("mako.dialog.cancel") }
+        if let input {
+            alert.accessoryView = input
+            alert.window.initialFirstResponder = input
+        }
+        guard await alert.beginSheetModal(for: window) == .alertFirstButtonReturn else { return nil }
+        return input?.stringValue ?? ""
+    }
+
     func webView(_ webView: WKWebView, didFinish _: WKNavigation!) {
         Perf.firstPage()
         log.info("loaded page \(self.id(of: webView).map(String.init) ?? "popup", privacy: .public): \(webView.title ?? "", privacy: .public)")

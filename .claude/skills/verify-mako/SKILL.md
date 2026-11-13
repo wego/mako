@@ -82,6 +82,8 @@ Kills only the PID this run launched and removes `$MAKO_RUN/state` and the run's
 
 `trails-bg` checks trails behaviour (links nest, in-place navigation, restart restore, lazy loading, trail cap, blocked links) without taking focus and without Accessibility or Screen Recording permission.
 
+`.claude/skills/verify-mako/scripts/dialogs-bg` checks, the same way, that `alert()`, `confirm()` and `prompt()` wait for the person (see `features/dialogs.md`).
+
 ```sh
 .claude/skills/verify-mako/scripts/trails-ax
 ```
