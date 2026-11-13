@@ -71,7 +71,7 @@ Every command is `makoctl <pid> <command> [args]`. Commands that send input (`ke
 | `makoctl <pid> menu-items <Menu>` | One line per item in a menu bar menu; the checked item starts with `*`. `menu-items Tabs` lists open tabs with the active one checked. Does not open the menu. |
 | `makoctl <pid> windows` | One line per window. Sign-in popups carry `id="mako.popup"`. |
 | `makoctl <pid> pointer-center` | Moves the mouse pointer over the middle of the page. Perf runs use it so cursor-update costs are measured the same way every time. Moves the user's real pointer. |
-| `makoctl <pid> shot <path.png>` | Screenshot of Mako's main window, even if other apps cover it. Exit 6 without Screen Recording permission. |
+| `makoctl <pid> shot <path.png>` | Screenshot of Mako's main window, even if other apps cover it. Exit 6 without Screen Recording permission. The only command that works without Accessibility permission. |
 | `makoctl <pid> click-id <ax-identifier> [fx fy]` | Real mouse click at a point inside the element: `fx`/`fy` are fractions of its frame (default the centre). For a stepper, `0.5 0.25` hits the up arrow and `0.5 0.75` the down arrow. Activates Mako and moves the user's real pointer, so it is refused with `MAKO_BACKGROUND=1` (exit 9). |
 
 ### Acting
@@ -206,7 +206,7 @@ Set `MAKO_BACKGROUND=1` for both tools. `control-mako launch` then starts the te
 
 ## Trails state on disk
 
-`trails.json` sits beside the config (`verify-runs/<run>/state/trails.json` for test runs). It is the core's whole state: `roots`, `nodes` (each with `parent`, `children`, `url`, `title`), `active`, and `closed` (the Undo Close stack). It is rewritten after every change, so reading it is the most direct way to assert the tree.
+`trails.json` sits beside the config (`verify-runs/<run>/state/trails.json` for test runs). It is the core's whole state: `roots`, `nodes` (each with `parent`, `children`, `url`, `title`), `active`, `closed` (the Undo Close stack), and `colors` (each trail's colour slot, keyed by root id). It is rewritten after every change, so reading it is the most direct way to assert the tree.
 
 ## Verification and performance
 

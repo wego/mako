@@ -27,6 +27,10 @@ pub struct Trails {
     pub active: Option<Id>,
     /// Most recently closed last.
     pub closed: Vec<Closed>,
+    /// Colour slot per trail, keyed by root id, so a trail keeps its colour while others
+    /// close or move. Kept in step with `roots` by `paint` after every change.
+    #[serde(default)]
+    pub colors: BTreeMap<Id, u8>,
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
@@ -119,11 +123,13 @@ pub struct Row {
     pub active: bool,
     pub collapsed: bool,
     pub has_children: bool,
+    /// The colour slot of the trail this page is in.
+    pub color: u8,
 }
 
 impl Default for Trails {
     fn default() -> Self {
-        Trails { version: VERSION, next_id: 1, roots: vec![], nodes: BTreeMap::new(), active: None, closed: vec![] }
+        Trails { version: VERSION, next_id: 1, roots: vec![], nodes: BTreeMap::new(), active: None, closed: vec![], colors: BTreeMap::new() }
     }
 }
 
@@ -239,7 +245,20 @@ pub fn apply(state: &Trails, action: &Action, max_trails: usize) -> Result<Trail
             s.nodes.get_mut(id).ok_or(Error::NoSuchPage(*id))?.name = name.clone().filter(|n| !n.trim().is_empty());
         }
     }
+    paint(&mut s);
     Ok(s)
+}
+
+/// Drops colours of pages that are no longer trails and gives each new trail the lowest
+/// free slot, so no two open trails share a colour and none changes while it stays open.
+fn paint(s: &mut Trails) {
+    s.colors.retain(|id, _| s.roots.contains(id));
+    for root in &s.roots {
+        if !s.colors.contains_key(root) {
+            let free = (0..=u8::MAX).find(|c| !s.colors.values().any(|v| v == c)).unwrap_or(0);
+            s.colors.insert(*root, free);
+        }
+    }
 }
 
 fn add(s: &mut Trails, parent: Option<Id>, url: &str) -> Id {
@@ -307,25 +326,25 @@ fn subtree(s: &Trails, id: Id) -> Vec<Id> {
 
 /// Sidebar rows in display order; children of collapsed pages are left out.
 pub fn rows(state: &Trails) -> Vec<Row> {
-    fn walk(s: &Trails, id: Id, depth: usize, out: &mut Vec<Row>) {
+    fn walk(s: &Trails, id: Id, depth: usize, color: u8, out: &mut Vec<Row>) {
         let n = &s.nodes[&id];
         let label = n.name.as_deref().or(Some(n.title.as_str()).filter(|t| !t.is_empty())).unwrap_or(&n.url);
         out.push(Row {
             id, depth, label: label.into(), url: n.url.clone(), title: n.title.clone(), active: s.active == Some(id),
-            collapsed: n.collapsed, has_children: !n.children.is_empty(),
+            collapsed: n.collapsed, has_children: !n.children.is_empty(), color,
         });
         if !n.collapsed {
-            n.children.iter().for_each(|c| walk(s, *c, depth + 1, out));
+            n.children.iter().for_each(|c| walk(s, *c, depth + 1, color, out));
         }
     }
     let mut out = vec![];
-    state.roots.iter().for_each(|r| walk(state, *r, 0, &mut out));
+    state.roots.iter().for_each(|r| walk(state, *r, 0, state.colors.get(r).copied().unwrap_or(0), &mut out));
     out
 }
 
 /// Parses saved state and checks it is a well-formed tree before anything trusts it.
 pub fn load(json: &str) -> Result<Trails, Error> {
-    let s: Trails = serde_json::from_str(json).map_err(|e| Error::Invalid(e.to_string()))?;
+    let mut s: Trails = serde_json::from_str(json).map_err(|e| Error::Invalid(e.to_string()))?;
     let bad = |why: &str| Err(Error::Invalid(why.into()));
     if s.version != VERSION {
         return bad(&format!("version {} (this build reads {VERSION})", s.version));
@@ -356,6 +375,7 @@ pub fn load(json: &str) -> Result<Trails, Error> {
     if s.closed.iter().any(|c| c.nodes.is_empty()) {
         return bad("empty closed entry");
     }
+    paint(&mut s);
     Ok(s)
 }
 
@@ -603,6 +623,42 @@ mod tests {
         assert_eq!(apply(&sample(), &jump(2), 3), Err(Error::NoSuchTrail(2)));
         let a: Action = serde_json::from_str(r#"{"type":"jump","trail":0}"#).unwrap();
         assert_eq!(a, jump(0));
+    }
+
+    fn colors(s: &Trails) -> Vec<(Id, u8)> { rows(s).into_iter().map(|r| (r.id, r.color)).collect() }
+
+    #[test]
+    fn each_trail_gets_the_lowest_free_colour_and_its_pages_share_it() {
+        // a(1) > [b(2) > [d(4)], c(3)], e(5)
+        assert_eq!(colors(&sample()), [(1, 0), (2, 0), (4, 0), (3, 0), (5, 1)]);
+        let s = run(&sample(), &[Action::Close { id: 1 }, trail("f")]);
+        assert_eq!(colors(&s), [(5, 1), (6, 0)], "a closed trail frees its colour for the next one");
+    }
+
+    #[test]
+    fn a_trail_keeps_its_colour_when_others_close_or_move() {
+        let s = run(&sample(), &[Action::Close { id: 1 }]);
+        assert_eq!(colors(&s), [(5, 1)]);
+        let s = run(&sample(), &[nudge(5, Direction::Up)]);
+        assert_eq!(colors(&s)[0], (5, 1), "reordering trails keeps colours");
+    }
+
+    #[test]
+    fn a_page_that_becomes_a_trail_gets_a_free_colour() {
+        let s = run(&sample(), &[Action::Close { id: 1 }, trail("f"), Action::UndoClose]);
+        assert_eq!(colors(&s).into_iter().filter(|(id, _)| [1, 5, 6].contains(id)).collect::<Vec<_>>(), [(1, 2), (5, 1), (6, 0)]);
+        let s = run(&sample(), &[nudge(2, Direction::Out)]);
+        assert_eq!(colors(&s).into_iter().find(|(id, _)| *id == 2), Some((2, 2)));
+        let s = run(&sample(), &[place(5, 4, Place::Inside)]);
+        assert_eq!(s.colors, BTreeMap::from([(1, 0)]), "a trail moved inside another drops its colour");
+    }
+
+    #[test]
+    fn state_saved_before_colours_loads_with_colours() {
+        let mut json: serde_json::Value = serde_json::from_str(&save(&sample())).unwrap();
+        json.as_object_mut().unwrap().remove("colors");
+        let s = load(&json.to_string()).unwrap();
+        assert_eq!(s.colors, BTreeMap::from([(1, 0), (5, 1)]));
     }
 
     #[test]

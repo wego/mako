@@ -2,6 +2,15 @@ import AppKit
 
 private let pageDragType = NSPasteboard.PasteboardType("com.wego.mako.page")
 
+extension NSColor {
+    /// Trail colours by the core's slot. System colours, so each adapts to light and dark.
+    static func trail(_ slot: Int) -> NSColor {
+        let palette: [NSColor] = [.systemBlue, .systemOrange, .systemGreen, .systemPurple, .systemPink,
+                                  .systemTeal, .systemYellow, .systemIndigo, .systemBrown]
+        return palette[slot % palette.count]
+    }
+}
+
 /// Where a dragged page lands relative to the row it is dropped on. Raw values are the core's.
 enum DropPlace: String { case before, after, inside }
 
@@ -63,8 +72,8 @@ final class Sidebar: NSView {
         stack.arrangedSubviews.forEach { $0.removeFromSuperview() }
         guard mine == generation else { return }
         rowViews = [:]
-        for row in rows {
-            let view = RowView(row, sidebar: self)
+        for (i, row) in rows.enumerated() {
+            let view = RowView(row, endsTrail: rows.indices.contains(i + 1) ? rows[i + 1].depth == 0 : true, sidebar: self)
             rowViews[row.id] = view
             stack.addArrangedSubview(view)
             view.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -12).isActive = true
@@ -83,6 +92,8 @@ final class FlippedView: NSView {
 @MainActor
 private final class RowView: NSView, NSDraggingSource, NSTextFieldDelegate {
     private let row: TrailRow
+    /// The last row of its trail: the rail's rounded bottom.
+    private let endsTrail: Bool
     private unowned let sidebar: Sidebar
     private let label: NSTextField
     private var hovered = false { didSet { needsDisplay = true } }
@@ -90,8 +101,9 @@ private final class RowView: NSView, NSDraggingSource, NSTextFieldDelegate {
     private var mouseDownAt: NSPoint?
     private var editor: NSTextField?
 
-    init(_ row: TrailRow, sidebar: Sidebar) {
+    init(_ row: TrailRow, endsTrail: Bool, sidebar: Sidebar) {
         self.row = row
+        self.endsTrail = endsTrail
         self.sidebar = sidebar
         label = NSTextField(labelWithString: row.label)
         super.init(frame: .zero)
@@ -117,7 +129,7 @@ private final class RowView: NSView, NSDraggingSource, NSTextFieldDelegate {
         }
         NSLayoutConstraint.activate([
             heightAnchor.constraint(equalToConstant: 26),
-            toggle.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 4 + CGFloat(row.depth) * 14),
+            toggle.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8 + CGFloat(row.depth) * 14),
             toggle.widthAnchor.constraint(equalToConstant: 14),
             toggle.centerYAnchor.constraint(equalTo: centerYAnchor),
             label.leadingAnchor.constraint(equalTo: toggle.trailingAnchor, constant: 2),
@@ -151,14 +163,21 @@ private final class RowView: NSView, NSDraggingSource, NSTextFieldDelegate {
     // MARK: Looks
 
     override func draw(_ dirtyRect: NSRect) {
+        let color = NSColor.trail(row.color)
         let shape = NSBezierPath(roundedRect: bounds, xRadius: 6, yRadius: 6)
         if row.active {
-            NSColor.controlAccentColor.withAlphaComponent(0.22).setFill()
+            color.withAlphaComponent(0.2).setFill()
             shape.fill()
         } else if hovered || drop == .inside {
             NSColor.labelColor.withAlphaComponent(drop == .inside ? 0.16 : 0.07).setFill()
             shape.fill()
         }
+        // One rail per trail down the leading edge, rounded only where the trail starts and ends.
+        // It reaches across the 1 pt gap below so consecutive rows join up.
+        let top = row.depth == 0, bottom = endsTrail
+        let rail = NSRect(x: 0, y: bottom ? 3 : -1, width: 3, height: bounds.height - (bottom ? 3 : -1) - (top ? 3 : 0))
+        color.withAlphaComponent(0.75).setFill()
+        NSBezierPath(roundedRect: rail, xRadius: top || bottom ? 1.5 : 0, yRadius: top || bottom ? 1.5 : 0).fill()
         if let drop, drop != .inside {
             NSColor.controlAccentColor.setFill()
             NSRect(x: 4, y: drop == .before ? bounds.maxY - 2 : 0, width: bounds.width - 8, height: 2).fill()

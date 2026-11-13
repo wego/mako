@@ -114,7 +114,8 @@ let usage = """
 
 let args = Array(CommandLine.arguments.dropFirst())
 guard args.count >= 2, let pid = pid_t(args[0]) else { fail(usage, 64) }
-guard AXIsProcessTrusted() else { fail("accessibility permission missing for this terminal", 2) }
+// A screenshot needs only Screen Recording, so it works where Accessibility is not granted.
+guard AXIsProcessTrusted() || args[1] == "shot" else { fail("accessibility permission missing for this terminal", 2) }
 guard NSRunningApplication(processIdentifier: pid) != nil else { fail("pid \(pid) not running", 3) }
 let app = AXUIElementCreateApplication(pid)
 func mainWindow() -> AXUIElement {

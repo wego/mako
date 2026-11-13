@@ -297,11 +297,20 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
             // A trail's root carries its ⌘1…⌘9 jump, so each trail is listed once.
             if row.depth == 0 {
                 trail += 1
+                item.image = Self.dot(.trail(row.color))
                 item.action = #selector(jumpToTrail(_:))
                 item.tag = trail - 1
                 if trail <= 9 { item.keyEquivalent = String(trail) }
             }
             trailsMenu.addItem(item)
+        }
+    }
+
+    private static func dot(_ color: NSColor) -> NSImage {
+        NSImage(size: NSSize(width: 10, height: 10), flipped: false) { rect in
+            color.setFill()
+            NSBezierPath(ovalIn: rect.insetBy(dx: 1, dy: 1)).fill()
+            return true
         }
     }
 

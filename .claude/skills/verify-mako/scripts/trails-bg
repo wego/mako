@@ -61,6 +61,7 @@ check restart-leaves-others-unloaded sh -c "! echo '$l' | grep -qE 'allow $U/(a|
 echo "== external links: second trail, then a page in it at the cap"
 open -g -a "$app" "$U/c.html?two"; sleep 3
 t=$(tree); check external-starts-second-trail sh -c "echo '$t' | grep -q '^0 Page C c.html?two \*'"
+check each-trail-has-its-own-colour python3 -c "import json,sys; s=json.load(open('$run/state/trails.json')); sys.exit(sorted(s['colors'].values()) != [0, 1] or set(s['colors']) != {str(r) for r in s['roots']})"
 open -g -a "$app" "$U/c.html?three"; sleep 3
 t=$(tree); check external-at-cap-becomes-child sh -c "echo '$t' | grep -q '^1 Page C c.html?three \*'"
 logs >"$run/evidence/external-log.txt"
