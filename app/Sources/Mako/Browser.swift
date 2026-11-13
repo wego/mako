@@ -98,6 +98,13 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
     /// Script-opened windows (OAuth sign-in) live outside the trails.
     private var popups: [NSWindow] = []
     private var popupObservations: [NSKeyValueObservation] = []
+    /// Page dialogs shown per web view, and web views the person has silenced.
+    private var dialogsShown: [ObjectIdentifier: Int] = [:]
+    private var silenced: Set<ObjectIdentifier> = []
+    /// The navigation the person last started from Mako (address bar, Back, Forward, Reload) per
+    /// web view, kept by identity: a same-document Back never commits, so a bare mark would
+    /// wait for the page's next reload.
+    private var userLoads: [ObjectIdentifier: WKNavigation] = [:]
     private let webConfig = WKWebViewConfiguration()
     private let container = NSView()
     private let sidebar = Sidebar()
@@ -267,6 +274,9 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         observations[id] = nil
         reported[id] = nil
         recency.removeAll { $0 == id }
+        dialogsShown[ObjectIdentifier(view)] = nil
+        silenced.remove(ObjectIdentifier(view))
+        userLoads[ObjectIdentifier(view)] = nil
         if view === shown { shown = nil }
         view.removeFromSuperview()
     }
@@ -425,7 +435,7 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         var error: String?
         switch omniTarget {
         case .current:
-            if let shown { shown.load(URLRequest(url: url)) } else { error = store.apply("open_trail", ["url": url.absoluteString]) }
+            if shown != nil { userLoad { $0.load(URLRequest(url: url)) } } else { error = store.apply("open_trail", ["url": url.absoluteString]) }
         case .newTrail:
             error = store.apply("open_trail", ["url": url.absoluteString])
         case .child(let parent):
@@ -451,9 +461,13 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         showOmnibox(for: .child(parent))
     }
     @objc func openLocation(_: Any?) { showOmnibox(for: .current, text: shown.flatMap(page)?.absoluteString) }
-    @objc func back(_: Any?) { shown?.goBack() }
-    @objc func forward(_: Any?) { shown?.goForward() }
-    @objc func reload(_: Any?) { shown?.reload() }
+    @objc func back(_: Any?) { userLoad { $0.goBack() } }
+    @objc func forward(_: Any?) { userLoad { $0.goForward() } }
+    @objc func reload(_: Any?) { userLoad { $0.reload() } }
+    private func userLoad(_ go: (WKWebView) -> WKNavigation?) {
+        guard let shown else { return }
+        userLoads[ObjectIdentifier(shown)] = go(shown)
+    }
     @objc func zoomIn(_: Any?) { shown?.pageZoom += 0.1 }
     @objc func zoomOut(_: Any?) { if let shown { shown.pageZoom = max(0.3, shown.pageZoom - 0.1) } }
     @objc func zoomReset(_: Any?) { shown?.pageZoom = 1 }
@@ -678,9 +692,76 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
     func windowWillClose(_ notification: Notification) {
         guard let closing = notification.object as? NSWindow, popups.contains(closing) else { return }
         popups.removeAll { $0 === closing }
+        if let popup = closing.contentView {
+            dialogsShown[ObjectIdentifier(popup)] = nil
+            silenced.remove(ObjectIdentifier(popup))
+            userLoads[ObjectIdentifier(popup)] = nil
+        }
         // Hand focus back to the page that opened the sign-in.
         if !Self.background { window.makeKeyAndOrderFront(nil) }
         window.makeFirstResponder(omnibox.isHidden ? shown : field)
+    }
+
+    func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String,
+                 initiatedByFrame frame: WKFrameInfo) async {
+        _ = await ask(message, from: frame, in: webView, cancellable: false)
+    }
+
+    func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String,
+                 initiatedByFrame frame: WKFrameInfo) async -> Bool {
+        await ask(message, from: frame, in: webView, cancellable: true) != nil
+    }
+
+    func webView(_ webView: WKWebView, runJavaScriptTextInputPanelWithPrompt prompt: String,
+                 defaultText: String?, initiatedByFrame frame: WKFrameInfo) async -> String? {
+        let input = NSTextField(string: defaultText ?? "")
+        input.frame = NSRect(x: 0, y: 0, width: 260, height: 24)
+        input.setAccessibilityIdentifier("mako.dialog.field")
+        return await ask(prompt, from: frame, in: webView, cancellable: true, input: input)
+    }
+
+    /// A page dialog as a sheet on the page's own window. nil when cancelled.
+    private func ask(_ message: String, from frame: WKFrameInfo, in webView: WKWebView,
+                     cancellable: Bool, input: NSTextField? = nil) async -> String? {
+        let origin = frame.securityOrigin
+        let host = origin.host.isEmpty ? "This page" : origin.port == 0 ? origin.host : "\(origin.host):\(origin.port)"
+        let page = ObjectIdentifier(webView)
+        // A page in a trail that isn't shown has no window; answering for it, as WebKit
+        // would, beats pulling the person to a page they didn't pick.
+        guard let window = webView.window, !silenced.contains(page) else {
+            log.info("dialog from \(host, privacy: .public) dismissed")
+            return nil
+        }
+        dialogsShown[page, default: 0] += 1
+        let alert = NSAlert()
+        // The origin takes the bold line so page text cannot pose as another site.
+        alert.messageText = frame.isMainFrame ? host : "\(host) (embedded in this page)"
+        alert.informativeText = message
+        alert.addButton(withTitle: "OK").setAccessibilityIdentifier("mako.dialog.ok")
+        if cancellable { alert.addButton(withTitle: "Cancel").setAccessibilityIdentifier("mako.dialog.cancel") }
+        if let input {
+            alert.accessoryView = input
+            alert.window.initialFirstResponder = input
+        }
+        // A sheet blocks the whole window, so a page looping on alert() must be stoppable.
+        if dialogsShown[page, default: 0] > 1 {
+            alert.showsSuppressionButton = true
+            alert.suppressionButton?.title = "Don’t show more dialogs from this page"
+            alert.suppressionButton?.setAccessibilityIdentifier("mako.dialog.silence")
+        }
+        let answer = await alert.beginSheetModal(for: window)
+        if alert.suppressionButton?.state == .on { silenced.insert(page) }
+        guard answer == .alertFirstButtonReturn else { return nil }
+        return input?.stringValue ?? ""
+    }
+
+    /// Only a load the person started lifts silencing: a page that reloads or redirects
+    /// itself between alerts would otherwise reset its own count and loop again.
+    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        guard let started = userLoads[ObjectIdentifier(webView)], started === navigation else { return }
+        userLoads[ObjectIdentifier(webView)] = nil
+        dialogsShown[ObjectIdentifier(webView)] = nil
+        silenced.remove(ObjectIdentifier(webView))
     }
 
     func webView(_ webView: WKWebView, didFinish _: WKNavigation!) {

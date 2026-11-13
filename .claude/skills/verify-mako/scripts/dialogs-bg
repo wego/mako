@@ -1,0 +1,33 @@
+#!/bin/bash
+# Checks that alert(), confirm() and prompt() wait for the person instead of being answered
+# by WebKit. No focus, no Accessibility or Screen Recording permission: each fixture page
+# opens a dialog 300 ms after load, and its title, read from the saved trails.json, only
+# changes once the dialog returns. Answering the dialogs needs a person or AX: see
+# features/dialogs.md. Prints PASS/FAIL per check; exit status is the number of failures.
+set -u
+cd "$(dirname "$0")/../../../.."
+export MAKO_BACKGROUND=1 MAKO_RUN="$PWD/verify-runs/dialogs-bg"
+run=$MAKO_RUN; exe="$run/app/Mako.app/Contents/MacOS/Mako"; app="$run/app/Mako.app"
+fails=0
+check() { local name=$1; shift; if "$@" >/dev/null 2>&1; then echo "PASS $name"; else echo "FAIL $name"; fails=$((fails + 1)); fi; }
+stop() { pkill -f "$exe" 2>/dev/null; sleep 0.5; }
+title() { python3 -c "import json,sys; s=json.load(open(sys.argv[1])); print(s['nodes'][str(s['active'])]['title'])" "$run/state/trails.json"; }
+trap 'stop; kill $srv 2>/dev/null; wait $srv 2>/dev/null' EXIT
+
+script/bundle >/dev/null || { echo "FAIL build"; exit 99; }
+stop; rm -rf "$run/app"; mkdir -p "$run/app" "$run/evidence"
+cp -R build/Mako.app "$app"
+/usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier com.wego.mako.verify.dialogs-bg" -c "Delete :CFBundleURLTypes" "$app/Contents/Info.plist"
+codesign --force --sign - "$app" 2>/dev/null
+port=$(python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')
+python3 -m http.server "$port" --bind 127.0.0.1 -d .claude/skills/verify-mako/fixtures/dialogs >/dev/null 2>&1 &
+srv=$!; sleep 1
+
+for kind in alert confirm prompt; do
+  stop; rm -rf "$run/state"; mkdir -p "$run/state"; : >"$run/state/config"
+  open -n -g -a "$app" --env MAKO_CONFIG="$run/state/config" --env MAKO_BACKGROUND=1 --args "http://127.0.0.1:$port/$kind.html"
+  sleep 4
+  t=$(title); echo "$t" >"$run/evidence/$kind-title.txt"
+  check "$kind-waits-for-person" test "$t" = waiting
+done
+exit $fails

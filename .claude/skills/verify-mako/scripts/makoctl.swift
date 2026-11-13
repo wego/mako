@@ -194,7 +194,7 @@ case "title":
 case "value", "exists":
     guard args.count > 2 else { fail(usage, 64) }
     guard let e = find(app, id: args[2]) else { fail("no element \(args[2])", 4) }
-    if args[1] == "value" { print(str(e, kAXValueAttribute) ?? "") }
+    if args[1] == "value" { print(str(e, kAXValueAttribute) ?? (attr(e, kAXValueAttribute) as? NSNumber)?.stringValue ?? "") }
 case "frame":
     guard args.count > 2 else { fail(usage, 64) }
     let f = frame(args[2])
