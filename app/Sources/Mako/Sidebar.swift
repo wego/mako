@@ -215,7 +215,7 @@ private final class CardView: NSView {
                 NSBezierPath(ovalIn: NSRect(x: center.x - 5, y: center.y - 5, width: 10, height: 10)).fill()
             } else {
                 // Starts 6 pt up inside the page above, so the branch reads as growing out of it.
-                let x = frame.minX + 14.75 + CGFloat(row.row.depth - 1) * 16, y = frame.midY + 0.75
+                let x = frame.minX + 14.75 + CGFloat(row.level - 1) * 16, y = frame.midY + 0.75
                 let branch = NSBezierPath()
                 branch.move(to: NSPoint(x: x, y: frame.maxY + 6))
                 branch.appendArc(from: NSPoint(x: x, y: y), to: NSPoint(x: x + 8.25, y: y), radius: 7.25)
@@ -244,6 +244,11 @@ private final class RowView: NSView, NSDraggingSource, NSTextFieldDelegate {
     private var drop: DropPlace? { didSet { needsDisplay = true } }
     private var mouseDownAt: NSPoint?
     private var editor: NSTextField?
+    private var indent: NSLayoutConstraint!
+
+    /// Levels the row is drawn in: its depth, capped so the name keeps 48 pt beside the toggle.
+    /// Past the first level each adds 16 pt; the icon, gaps and toggle take 70.
+    var level: Int { min(row.depth, max(1, Int((bounds.width - 70 - 48) / 16) + 1)) }
 
     init(_ row: TrailRow, sidebar: Sidebar) {
         self.row = row
@@ -277,9 +282,13 @@ private final class RowView: NSView, NSDraggingSource, NSTextFieldDelegate {
             addSubview(view)
         }
         // The card draws the root's dot and the branches in the space before the icon.
+        indent = icon.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 26)
+        // Below required: when the sidebar narrows, layout solves the new width with the old
+        // indent once before layout() caps it, and the name must not break a constraint then.
+        indent.priority = .init(999)
         NSLayoutConstraint.activate([
             heightAnchor.constraint(equalToConstant: 28),
-            icon.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 26 + CGFloat(max(row.depth - 1, 0)) * 16),
+            indent,
             icon.widthAnchor.constraint(equalToConstant: 16),
             icon.heightAnchor.constraint(equalToConstant: 16),
             icon.centerYAnchor.constraint(equalTo: centerYAnchor),
@@ -300,6 +309,11 @@ private final class RowView: NSView, NSDraggingSource, NSTextFieldDelegate {
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
+
+    override func layout() {
+        indent.constant = 26 + CGFloat(max(level - 1, 0)) * 16
+        super.layout()
+    }
 
     /// The site's icon, or a faint globe holding its place until one arrives.
     func setIcon(_ image: NSImage?) {
