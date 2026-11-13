@@ -5,20 +5,21 @@ One recipe per user-facing feature. Read this index, then drive the matching fil
 ## Baseline preconditions
 
 - `control-mako build` ran against the current checkout.
-- `control-mako launch` started a fresh instance with the default disposable config (`max_trails = 3`, `block x.com`) unless a recipe says otherwise. Fresh means no saved session, so only the launch URL is open.
+- `control-mako launch` started a fresh instance with the default disposable config (`max_trails = 3`, `block x.com`) unless a recipe says otherwise. Fresh means no `trails.json`, so only the launch addresses are open, each as a trail.
 - `control-mako doctor` prints `OK`.
-- `P=$(control-mako pid)` and `M=verify-runs/.bin/makoctl` are set.
-- Network access to `example.com` and `www.google.com`.
+- `P=$(control-mako pid)`, `M=verify-runs/.bin/makoctl` and `E=verify-runs/latest/evidence` are set.
+- Most recipes serve local fixtures (`scripts/fixture-server $PORT &` for `fixtures/trails/`, `python3 -m http.server` for the others) as `U=http://127.0.0.1:$PORT`. A few need network access to `example.com`, `www.iana.org` or `www.google.com`.
 
 ## Driving conventions
 
-- Every recipe starts from a fresh launch. Run `control-mako stop` then `launch` between recipes that mutate tabs.
-- Address elements by AX identifier or menu title, never by coordinates.
-- Read state after every action (`title`, `value`, `tree`), not only at the end.
+- Every recipe starts from a fresh launch. Run `control-mako stop` then `launch` between recipes that change the trails or the config.
+- Prefer `MAKO_BACKGROUND=1` and the AX commands (`menu`, `press-id`, `press`, `set`, `confirm`, and the reads); they work while the person uses the Mac. A step marked **(focus)** needs a headed run because it proves a real key press or pointer click.
+- Address elements by AX identifier or menu title, never by coordinates (the middle-clicks on fixture targets in `ux-headed` are the exception).
+- Read state after every action (`title`, `value`, `tree`, `trails.json`), not only at the end.
 
 ## Proof and skip reporting
 
-- UI proof is an AX `tree` capture plus a `shot`, both under `verify-runs/<run>/evidence/`.
+- UI proof is an AX `tree` capture plus a `shot`, both under `verify-runs/<run>/evidence/`; for the tree of pages, `trails.json`.
 - Navigation proof adds the `com.wego.mako` log lines for the same run.
 - Report an unreachable step with the command run and the unmet precondition. Never report a skipped entry point as verified through another one.
 
@@ -28,13 +29,14 @@ Each file: H1 title, one paragraph of user-visible behavior, then `Sub-features`
 
 ## Features
 
-- [Omnibox](./omnibox.md) covers address entry, search, and dismissal.
-- [Trails](./trails.md) covers links opening child pages, the trail cap, select, close, Undo Close, collapse, and restore. **Start here: the other files predate trails and still say "tab".**
-- [Blocklist](./blocklist.md) covers blocked and allowed hosts and live config edits.
-- [Accessibility tree](./accessibility.md) covers the handles agents rely on.
-- [Page shortcuts](./page-shortcuts.md) covers which ⌘ keys reach web pages.
-- [Developer console](./devtools.md) covers opening, using, and closing the Web Inspector.
-- [Session restore](./session.md) covers saving at quit, restoring at launch, and turning it off.
-- [Navigation and zoom](./navigation.md) covers back, forward, reload, and zoom.
+- [Trails](./trails.md) covers the sidebar's trees of pages: links opening child pages, the trail cap, select, ⌘1…⌘9 jumps, close, Undo Close, collapse, moves, rename, middle-clicks, colours, site icons, width, find, downloads.
+- [Omnibox](./omnibox.md) covers address entry, search, what Enter does for ⌘L, ⌘T, ⌥⌘T and ⌘F, the status line, and dismissal.
+- [Settings](./settings.md) covers the ⌘. window and its trail cap.
+- [Session restore](./session.md) covers saving `trails.json` on every change, restoring at launch, links at launch, turning it off, migration and unreadable files.
+- [Blocklist](./blocklist.md) covers blocked and allowed hosts, time windows, iframes, live config edits and config errors.
+- [Page dialogs](./dialogs.md) covers `alert()`, `confirm()` and `prompt()` sheets, answering them, and silencing.
 - [Sign-in popups](./popups.md) covers OAuth-style popups, `window.opener`, `target=_blank` links, and the user agent.
-- [Page dialogs](./dialogs.md) covers `alert()`, `confirm()` and `prompt()` sheets and how to answer them.
+- [Navigation and zoom](./navigation.md) covers back, forward, reload, and zoom.
+- [Page shortcuts](./page-shortcuts.md) covers which keys reach Mako and which reach web pages first.
+- [Developer console](./devtools.md) covers opening, using, and closing the Web Inspector.
+- [Accessibility tree](./accessibility.md) covers the handles and actions agents rely on.
