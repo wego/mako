@@ -91,7 +91,7 @@ Each lives in `.claude/skills/verify-mako/scripts/` and runs from the repo root 
 | Script | Covers | Needs | Checks |
 | --- | --- | --- | --- |
 | `trails-bg` | links nest, in-place navigation, restart restore and lazy loading, external links and the trail cap, blocked links (under a config with unusable lines), form submits, trail colours, site icons, file links | nothing: no focus, no permissions | 25 |
-| `trails-ax` | sidebar rows, collapse, Trails menu and ⌘1…⌘9 items, sidebar width, Settings, omnibox, trail cap and 🧠 note, close, Undo Close across a restart, moves, rename, find, deep rows at the narrowest sidebar | Accessibility | 53 |
+| `trails-ax` | sidebar rows, collapse, Trails menu and ⌘1…⌘9 items, sidebar width, Settings, omnibox, trail cap and 🧠 note, live config edits, close, Undo Close across a restart, moves, rename, find, deep rows at the narrowest sidebar | Accessibility | 59 |
 | `dialogs-bg` | `alert()`, `confirm()`, `prompt()` wait for the person | nothing | 3 |
 | `dialogs-ax` | answering dialogs, silencing, which navigations lift it | Accessibility | 17 |
 | `isolation-ax` | a run's website data is invisible to another run; the daily Mako's data is untouched | Accessibility | 4 (the last is `SKIP` while the daily Mako runs) |
