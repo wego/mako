@@ -101,6 +101,7 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
     private let webConfig = WKWebViewConfiguration()
     private let container = NSView()
     private let sidebar = Sidebar()
+    private let favicons = Favicons()
     private let divider = DividerView()
     private var sidebarWidth: NSLayoutConstraint!
     private let blank = NSImageView()
@@ -152,6 +153,8 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         sidebar.onRename = { [unowned self] in apply("rename", ["id": $0, "name": $1]) }
         sidebar.onClose = { [unowned self] in close($0) }
         sidebar.onPlace = { [unowned self] in apply("place", ["id": $0, "target": $1, "place": $2.rawValue]) }
+        sidebar.iconFor = { [unowned self] in favicons.icon(for: $0.url) }
+        favicons.onChange = { [unowned self] in sidebar.refreshIcons() }
         divider.onDrag = { [unowned self] in setSidebarWidth(sidebarWidth.constant + $0) }
         divider.onSet = { [unowned self] in setSidebarWidth($0) }
 
@@ -653,6 +656,14 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
 
     func webView(_ webView: WKWebView, didFinish _: WKNavigation!) {
         Perf.firstPage()
+        // Read the page's declared icon from Mako's own script world, out of the page's reach.
+        if id(of: webView) != nil, let page = webView.url {
+            webView.evaluateJavaScript(Favicons.script, in: nil, in: .defaultClient) { [weak self] result in
+                MainActor.assumeIsolated {
+                    if case .success(let href as String) = result, let icon = URL(string: href) { self?.favicons.pageDeclared(icon, on: page) }
+                }
+            }
+        }
         log.info("loaded page \(self.id(of: webView).map(String.init) ?? "popup", privacy: .public): \(webView.title ?? "", privacy: .public)")
     }
 

@@ -19,6 +19,7 @@ Trails replace tabs. A trail is a tree of pages in the sidebar: a followed link 
 - `trail-rename` double-click a row, right-click → Rename…, or Trails → Rename Page…; Enter saves, Escape cancels, an empty name goes back to the page title.
 - `trail-background-link` ⌘-click opens the link beneath the page without leaving it.
 - `trail-colors` each open trail has its own colour (`colors` in `trails.json`, keyed by root id): a rail down the rows' leading edge, the active row tinted with it, a dot on its Trails menu item. A trail keeps its colour while others close or move; a new trail takes the lowest free one.
+- `favicons` each row shows its site's icon: the one the loaded page declares (`link[rel~=icon]`, else `apple-touch-icon`), else `/favicon.ico`, so rows of pages not loaded yet get one too. A faint globe holds the place until then. Icons are fetched without cookies, only for http(s), never for a blocked host, and a host that has none is not asked again until restart. The log says `favicon <host> from <url>` or `none at <url>`.
 - `sidebar-scroller` the sidebar shows a scroller only when its rows overflow, even with "Show scroll bars: Always".
 - `sidebar-width` the sidebar starts at a fifth of the window (200–320 pt), drags by its edge, and keeps its width across restarts.
 - `find` ⌘F finds in the page from the omnibox; Enter or ⌘G next, ⇧⌘G previous.
@@ -37,7 +38,7 @@ Trails replace tabs. A trail is a tree of pages in the sidebar: a followed link 
 
 Preconditions: baseline. For background runs set `MAKO_BACKGROUND=1` (then use `menu`, `press-id`, `set`, `confirm`; no `key`/`type`). Fixture pages that click their own links are in `fixtures/trails/`; serve them with `python3 -m http.server $PORT --bind 127.0.0.1 -d .claude/skills/verify-mako/fixtures/trails &`.
 
-- **No permissions, no focus.** `.claude/skills/verify-mako/scripts/trails-bg` covers `trail-link`, `trail-in-place`, `trail-external`, `trail-restore` and `trail-blocked-link` by reading `trails.json` and the log. 18 checks.
+- **No permissions, no focus.** `.claude/skills/verify-mako/scripts/trails-bg` covers `trail-link`, `trail-in-place`, `trail-external`, `trail-restore`, `trail-blocked-link`, `trail-colors` and `favicons` by reading `trails.json` and the log. 21 checks.
 - **AX, no focus.** `.claude/skills/verify-mako/scripts/trails-ax` covers `trail-select`, `trail-collapse`, `trail-new` and the cap, `trail-child`, `trail-close`, `trail-undo` (also after a restart) through `press-id`, `menu`, `set` and `confirm`, plus `trail-move` (menu moves), `trail-rename`, `sidebar-width` and `find`. 36 checks. The bullets below are what it runs.
 - **Link.** Launch on `$U/a.html`. `$M $P menu-items Trails` lists `Page A`, `Page B`, `Page C` with `Page C` checked; `python3 -m json.tool verify-runs/latest/state/trails.json` shows page 3 under 2 under 1.
 - **New trail and cap.** `$M $P menu File "New Trail"; $M $P set mako.omnibox.field example.com; $M $P confirm mako.omnibox.field`. A second root appears. Repeat: `value mako.omnibox.status` starts `Can’t open: trail cap reached (2)`.

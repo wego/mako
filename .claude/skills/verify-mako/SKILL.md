@@ -80,7 +80,7 @@ Kills only the PID this run launched and removes `$MAKO_RUN/state` and the run's
 .claude/skills/verify-mako/scripts/trails-bg
 ```
 
-`trails-bg` checks trails behaviour (links nest, in-place navigation, restart restore, lazy loading, trail cap, blocked links) without taking focus and without Accessibility or Screen Recording permission.
+`trails-bg` checks trails behaviour (links nest, in-place navigation, restart restore, lazy loading, trail cap, blocked links, trail colours, site icons) without taking focus and without Accessibility or Screen Recording permission.
 
 ```sh
 .claude/skills/verify-mako/scripts/trails-ax

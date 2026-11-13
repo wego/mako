@@ -22,6 +22,7 @@ final class Sidebar: NSView {
     var onRename: (UInt64, String) -> Void = { _, _ in }
     var onClose: (UInt64) -> Void = { _ in }
     var onPlace: (_ page: UInt64, _ target: UInt64, DropPlace) -> Void = { _, _, _ in }
+    var iconFor: (TrailRow) -> NSImage? = { _ in nil }
 
     private let stack = NSStackView()
     private var rowViews: [UInt64: RowView] = [:]
@@ -76,12 +77,16 @@ final class Sidebar: NSView {
         for (i, row) in rows.enumerated() {
             let view = RowView(row, endsTrail: rows.indices.contains(i + 1) ? rows[i + 1].depth == 0 : true, sidebar: self)
             rowViews[row.id] = view
+            view.setIcon(iconFor(row))
             stack.addArrangedSubview(view)
             view.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -12).isActive = true
         }
     }
 
     func beginRename(_ id: UInt64) { rowViews[id]?.beginRename() }
+
+    /// Icons arrive after the rows are drawn; updating in place keeps a rename in progress.
+    func refreshIcons() { rowViews.values.forEach { $0.setIcon(iconFor($0.row)) } }
 }
 
 final class FlippedView: NSView {
@@ -92,7 +97,8 @@ final class FlippedView: NSView {
 /// (with the pages beneath it) before, after, or inside another page.
 @MainActor
 private final class RowView: NSView, NSDraggingSource, NSTextFieldDelegate {
-    private let row: TrailRow
+    let row: TrailRow
+    private let icon = NSImageView()
     /// The last row of its trail: the rail's rounded bottom.
     private let endsTrail: Bool
     private unowned let sidebar: Sidebar
@@ -124,7 +130,10 @@ private final class RowView: NSView, NSDraggingSource, NSTextFieldDelegate {
         // The row itself is the accessibility element, not its text.
         label.setAccessibilityElement(false)
 
-        for view in [toggle, label] {
+        icon.imageScaling = .scaleProportionallyUpOrDown
+        icon.setAccessibilityElement(false)
+
+        for view in [toggle, icon, label] {
             view.translatesAutoresizingMaskIntoConstraints = false
             addSubview(view)
         }
@@ -133,7 +142,11 @@ private final class RowView: NSView, NSDraggingSource, NSTextFieldDelegate {
             toggle.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8 + CGFloat(row.depth) * 14),
             toggle.widthAnchor.constraint(equalToConstant: 14),
             toggle.centerYAnchor.constraint(equalTo: centerYAnchor),
-            label.leadingAnchor.constraint(equalTo: toggle.trailingAnchor, constant: 2),
+            icon.leadingAnchor.constraint(equalTo: toggle.trailingAnchor, constant: 2),
+            icon.widthAnchor.constraint(equalToConstant: 16),
+            icon.heightAnchor.constraint(equalToConstant: 16),
+            icon.centerYAnchor.constraint(equalTo: centerYAnchor),
+            label.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 6),
             label.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
             label.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
@@ -147,6 +160,15 @@ private final class RowView: NSView, NSDraggingSource, NSTextFieldDelegate {
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
+
+    /// The site's icon, or a faint globe holding its place until one arrives.
+    func setIcon(_ image: NSImage?) {
+        icon.image = image ?? Self.globe
+        icon.contentTintColor = image == nil ? .tertiaryLabelColor : nil
+        setAccessibilityHelp(image == nil ? "no site icon" : "site icon")
+    }
+    private static let globe = NSImage(systemSymbolName: "globe", accessibilityDescription: nil)?
+        .withSymbolConfiguration(.init(pointSize: 12, weight: .light))
 
     override func accessibilityPerformPress() -> Bool {
         sidebar.onSelect(row.id)

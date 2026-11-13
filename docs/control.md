@@ -115,7 +115,7 @@ Stable identifiers Mako sets for automation. Prefer these, menu titles, and the 
 | --- | --- |
 | `mako.page` | Container for the active tab's page. |
 | `mako.sidebar` | The trails sidebar. |
-| `mako.trail.<id>` | A sidebar row (a page). `id` is the page's permanent id, not a position. Its AX value is `selected` on the active page. |
+| `mako.trail.<id>` | A sidebar row (a page). `id` is the page's permanent id, not a position. Its AX value is `selected` on the active page; its AX help is `site icon` once the site's icon has arrived, `no site icon` before. |
 | `mako.trail.<id>.toggle` | That row's collapse/expand control (only when it has pages beneath it). |
 | `mako.trail.<id>.name` | The text field that replaces a row's label while it is being renamed (Trails → Rename Page…). `set` it, then `confirm` it. |
 | `mako.divider` | The edge between sidebar and page. Its value is the sidebar width in points; `set mako.divider 300` resizes it (kept between 160 and 480). |
@@ -210,7 +210,7 @@ Set `MAKO_BACKGROUND=1` for both tools. `control-mako launch` then starts the te
 
 ## Verification and performance
 
-- `scripts/trails-bg`: trails behaviour (links nest, restart restore, lazy loading, trail cap, blocked links, form submits) with no focus and no permissions. 18 checks.
+- `scripts/trails-bg`: trails behaviour (links nest, restart restore, lazy loading, trail cap, blocked links, form submits, trail colours, site icons) with no focus and no permissions. 21 checks.
 - `scripts/trails-ax`: the trails UI through accessibility actions, no focus: sidebar rows, collapse, omnibox, trail cap, close, Undo Close across a restart, moving and renaming pages, sidebar width, find in page. 36 checks. Needs Accessibility permission.
 - `scripts/smoke`: every feature recipe in `.claude/skills/verify-mako/features/`, then `perf`. One `PASS`/`FAIL` line per check; exit status is the number of failures. Takes focus for about 3 minutes.
 - `scripts/perf`: performance budgets (launch, new tab, tab switch, memory, bundle size, Rust core). See the top of the script for the numbers.
