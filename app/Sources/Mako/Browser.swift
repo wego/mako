@@ -691,6 +691,12 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         return input?.stringValue ?? ""
     }
 
+    /// Dialog counts and silencing belong to a document, as in Safari, not to the view.
+    func webView(_ webView: WKWebView, didCommit _: WKNavigation!) {
+        dialogsShown[ObjectIdentifier(webView)] = nil
+        silenced.remove(ObjectIdentifier(webView))
+    }
+
     func webView(_ webView: WKWebView, didFinish _: WKNavigation!) {
         Perf.firstPage()
         log.info("loaded page \(self.id(of: webView).map(String.init) ?? "popup", privacy: .public): \(webView.title ?? "", privacy: .public)")
