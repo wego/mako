@@ -1,0 +1,8 @@
+<!doctype html><title>waiting</title>
+<script>setTimeout(() => {
+  const n = Number(sessionStorage.getItem('reloads') || 0);
+  if (n >= 3) { document.title = 'reloads:done'; return; }
+  alert('One.'); alert('Two.');
+  sessionStorage.setItem('reloads', n + 1);
+  location.reload();
+}, 300);</script>
