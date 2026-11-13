@@ -19,10 +19,11 @@ extension NSColor {
     /// Terracotta: a warning that still sits on cream paper.
     static let caution = adaptive(NSColor(hex: 0xa8502e), NSColor(hex: 0xe58d6c))
 
-    /// Earthy inks that read on cream paper, each lightened for dark mode.
+    /// Earthy inks that read on cream paper, each lightened for dark mode: green, blue, pink,
+    /// ochre, plum, teal, wine, forest, umber.
     private static let trailInks: [(light: UInt32, dark: UInt32)] = [
-        (0xb8465f, 0xe07a90), (0x2f3f8f, 0x8c9ce6), (0xd9902a, 0xebb060), (0x5f7d3b, 0x9cbd72), (0x7a4fa0, 0xb690dc),
-        (0x2f7f7a, 0x6cbfb8), (0xc2603e, 0xe58d6c), (0x4a6fa5, 0x8aaee0), (0x8a6a3a, 0xc4a274),
+        (0x839d56, 0x97b561), (0x46648c, 0x92add2), (0xc7735f, 0xe29988), (0xd9902a, 0xebb060), (0x7a4fa0, 0xb690dc),
+        (0x2f7f7a, 0x6cbfb8), (0x8c3a5a, 0xd59ab1), (0x2f6b3a, 0x6fae7c), (0x8a6a3a, 0xc4a274),
     ]
 
     /// A trail's colour by the core's slot.
