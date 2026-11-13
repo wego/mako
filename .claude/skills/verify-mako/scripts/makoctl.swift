@@ -71,7 +71,7 @@ func menuItem(_ app: AXUIElement, _ menu: String, _ item: String) -> AXUIElement
 }
 
 let keyCodes: [String: CGKeyCode] = [
-    "return": 36, "escape": 53, "tab": 48, "t": 17, "w": 13, "l": 37, "r": 15, "z": 6, "c": 8, "a": 0, "v": 9, "x": 7, "[": 33, "]": 30,
+    "return": 36, "escape": 53, "tab": 48, "f": 3, "g": 5, "t": 17, "w": 13, "l": 37, "r": 15, "z": 6, "c": 8, "a": 0, "v": 9, "x": 7, "[": 33, "]": 30,
     "1": 18, "2": 19, "3": 20, "4": 21, "5": 23, "6": 22, "7": 26, "8": 28, "9": 25, "=": 24, "-": 27, "0": 29, ",": 43, ".": 47,
 ]
 
@@ -105,7 +105,7 @@ let usage = """
     makoctl <pid> confirm <ax-identifier>    AXConfirm (Enter) on a text field
     makoctl <pid> windows                  one line per window (popups have id="mako.popup")
     makoctl <pid> menu-items <Menu>        list a menu's item titles (checked = active)
-    makoctl <pid> key <combo>              e.g. return, escape, cmd+t, cmd+1, cmd+z
+    makoctl <pid> key <combo>              e.g. return, escape, cmd+t, cmd+1, cmd+f, ctrl+tab
     makoctl <pid> type <text>              type text into the focused element
     makoctl <pid> wait-title <substring> [seconds]
     makoctl <pid> time-key <combo> <substring>   ms from key press until the title contains substring
@@ -190,6 +190,7 @@ func postCombo(_ combo: String, settle: Bool = true) {
     if parts.contains("cmd") { flags.insert(.maskCommand) }
     if parts.contains("shift") { flags.insert(.maskShift) }
     if parts.contains("opt") { flags.insert(.maskAlternate) }
+    if parts.contains("ctrl") { flags.insert(.maskControl) }
     post(pid, key: code, flags: flags, settle: settle)
 }
 

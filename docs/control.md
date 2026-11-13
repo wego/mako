@@ -82,7 +82,7 @@ Every command is `makoctl <pid> <command> [args]`. Commands that send input (`ke
 
 | Command | Effect |
 | --- | --- |
-| `makoctl <pid> key <combo>` | Presses a key. Modifiers `cmd`, `shift`, `opt` joined with `+`. Keys: `return`, `escape`, `tab`, `a`, `c`, `t`, `v`, `w`, `x`, `l`, `r`, `z`, `[`, `]`, `0`–`9`, `=`, `-`, `,`. Examples: `cmd+t`, `cmd+opt+c`, `escape`. Exit 64 for a key not in the table; add it to `keyCodes` in `makoctl.swift`. |
+| `makoctl <pid> key <combo>` | Presses a key. Modifiers `cmd`, `shift`, `opt`, `ctrl` joined with `+`. Keys: `return`, `escape`, `tab`, `a`, `c`, `f`, `g`, `l`, `r`, `t`, `v`, `w`, `x`, `z`, `[`, `]`, `0`–`9`, `=`, `-`, `,`, `.`. Examples: `cmd+t`, `cmd+opt+t`, `cmd+shift+t`, `ctrl+tab`, `cmd+f`, `cmd+shift+g`, `cmd+opt+c`, `escape`. Exit 64 for a key not in the table; add it to `keyCodes` in `makoctl.swift`. |
 | `makoctl <pid> type <text>` | Types text into whatever has focus: the omnibox after `key cmd+l`, a web form field, the developer console. Any Unicode text works. |
 | `makoctl <pid> menu <Menu> <Item>` | Presses a menu item by its exact titles, e.g. `menu File "New Tab"`, `menu Tabs "Example Domain"`, `menu View "Developer Console"`. Does not open the menu (an open menu would swallow later keys). |
 | `makoctl <pid> press-id <ax-identifier>` | Presses the element with that identifier, e.g. a sidebar row: `press-id mako.trail.3`. Works with Mako in the background. |
@@ -108,7 +108,8 @@ Every command is `makoctl <pid> <command> [args]`. Commands that send input (`ke
 | 5 | `wait-title` / `time-key` timed out; the message shows the last title. |
 | 6 | Screenshot failed: Screen Recording permission. |
 | 7 | Could not bring Mako to the front: another app kept focus (usually someone typing). |
-| 8 | AX degraded: the screen is locked, or with the screen unlocked, the terminal's Accessibility grant went stale. |
+| 8 | AX degraded: the screen is locked, or with the screen unlocked, the terminal's Accessibility grant went stale. Every command but `shot` checks for this first. |
+| 9 | The command needs focus and `MAKO_BACKGROUND=1` is set (`key`, `type`, `time-key`, `click-id`, `middle-click-id`, `middle-click`). |
 | 64 | Bad usage or unknown key. |
 
 ## AX handles
