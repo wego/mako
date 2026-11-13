@@ -1,7 +1,8 @@
 #!/bin/bash
 # Answers page dialogs through accessibility actions, without focus: a page silenced with
 # "Don't show more dialogs from this page" stays silenced through its own reloads, and a
-# page the person loads from the address bar starts unsilenced. Needs Accessibility
+# page the person loads from the address bar starts unsilenced. Back across #fragment
+# history stays in the same document, so it keeps silencing too. Needs Accessibility
 # permission. Prints PASS/FAIL per check; exit status = failures.
 set -u
 cd "$(dirname "$0")/../../../.."
@@ -45,5 +46,14 @@ silence_second reload
 check script-reload-keeps-silence sh -c "$M $P wait-title reloads:done 6"
 $M "$P" shot "$E/after-reloads.png" >/dev/null 2>&1
 check script-reload-no-sheet absent mako.dialog.ok
+
+omni "$U/fragment-back.html"
+silence_second fragment
+check fragment-alerts-done sh -c "$M $P wait-title alerts:done 3"
+$M "$P" press "to a"; sleep 0.3; $M "$P" press "to b"; sleep 0.3
+$M "$P" menu History Back
+check fragment-back-then-script-reload-keeps-silence sh -c "$M $P wait-title reload:done 6"
+$M "$P" shot "$E/after-fragment-back.png" >/dev/null 2>&1
+check fragment-reload-no-sheet absent mako.dialog.ok
 echo "== $fails failure(s); evidence in $E"
 exit "$fails"
