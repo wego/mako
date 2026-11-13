@@ -71,7 +71,7 @@ $M "$P" menu Mako "Settings…"; sleep 0.5
 check settings-shows-default-cap test "$($M "$P" value mako.settings.maxTrails)" = 3
 check settings-stays-in-background test "$(front)" = "$before"
 $M "$P" set mako.settings.maxTrails 0; $M "$P" confirm mako.settings.maxTrails; sleep 0.3
-check settings-refuses-zero sh -c "test \"\$($M $P value mako.settings.maxTrails)\" = 3 && ! grep -q max_trails '$CF'"
+check settings-refuses-zero sh -c "test \"\$($M $P value mako.settings.maxTrails)\" = 3 && grep -qx 'max_trails = 3' '$CF'"
 $M "$P" set mako.settings.maxTrails 2; $M "$P" confirm mako.settings.maxTrails; sleep 0.3
 check settings-writes-config grep -qx 'max_trails = 2' "$CF"
 check settings-keeps-other-lines grep -qx 'block x.com' "$CF"
@@ -130,6 +130,7 @@ $M "$P" set mako.omnibox.field "zzzqqq"; $M "$P" confirm mako.omnibox.field; sle
 check find-miss sh -c "$M $P value mako.omnibox.status | head -1 | grep -q 'Not found'"
 $M "$P" shot "$E/sidebar.png" >/dev/null
 
-check never-took-focus test "$(front)" = "$before"
+after=$(front)
+if [ "$after" = "$before" ]; then pass never-took-focus; else fail "never-took-focus (front was $before, now $after)"; fi
 echo "== $fails failure(s); evidence in $E"
 exit "$fails"
