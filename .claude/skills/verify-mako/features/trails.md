@@ -10,6 +10,7 @@ Trails replace tabs. A trail is a tree of pages in the sidebar: a followed link 
 - `trail-child` ⌥⌘T opens a page beneath the current one from the omnibox.
 - `trail-external` a link from another app starts a trail, or at the cap opens beneath the current page.
 - `trail-select` a sidebar row, a Trails menu item, or ⌃Tab / ⌃⇧Tab selects a page.
+- `trail-jump` ⌘1…⌘9 (the trail's root item in the Trails menu) selects that trail's root; pressed on the root, its last page (last child, repeatedly); pressed there, the root again. A one-page trail stays on its root; a missing trail beeps.
 - `trail-close` ⌘W closes the active page and everything beneath it; a neighbour becomes active.
 - `trail-undo` ⇧⌘T reopens the last closed page with its subtree where it was, also after a restart.
 - `trail-collapse` a row's toggle hides or shows the pages beneath it.

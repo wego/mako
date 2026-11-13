@@ -28,6 +28,7 @@ func line(_ e: AXUIElement) -> String {
         if let s = str(e, a) { parts.append("\(k)=\"\(s.prefix(80).replacingOccurrences(of: "\n", with: "⏎"))\"") }
     }
     if let on = attr(e, "AXMenuItemMarkChar") as? String, !on.isEmpty { parts.append("checked") }
+    if let key = attr(e, "AXMenuItemCmdChar") as? String, !key.isEmpty { parts.append("cmd=\"\(key)\"") }
     return parts.joined(separator: " ")
 }
 

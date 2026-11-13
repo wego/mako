@@ -64,7 +64,7 @@ Every command is `makoctl <pid> <command> [args]`. Commands that send input (`ke
 | --- | --- |
 | `makoctl <pid> title` | The window's AX title: the active page's label (its name, else its title, else its address), or `Mako` when no page is open. |
 | `makoctl <pid> wait-title <substring> [seconds]` | Polls every 50 ms until the title contains the substring (default 10 s). Prints the title; exit 5 on timeout. The standard way to wait for a page load or tab change. |
-| `makoctl <pid> tree [depth] [--menus]` | The AX tree, one element per line: role, subrole, `id=`, `title=`, `desc=`, `value=`. Default depth 12. Web page content appears under `AXWebArea`. `--menus` includes the menu bar. |
+| `makoctl <pid> tree [depth] [--menus]` | The AX tree, one element per line: role, subrole, `id=`, `title=`, `desc=`, `value=`. Default depth 12. Web page content appears under `AXWebArea`. `--menus` includes the menu bar; a menu item with a shortcut shows its key as `cmd="1"`. |
 | `makoctl <pid> value <ax-identifier>` | The `AXValue` of the element with that identifier, e.g. the omnibox text. Exit 4 if absent. |
 | `makoctl <pid> exists <ax-identifier>` | Exit 0 if an element with that identifier is in the tree, 4 otherwise. Hidden elements can still exist; use `shot` to prove visibility. |
 | `makoctl <pid> text` | The active page's visible text, untruncated, one line per text run (`tree` shortens values to 80 characters). |
@@ -127,7 +127,7 @@ Stable identifiers Mako sets for automation. Prefer these, menu titles, and the 
 | `mako.blank` | The app icon shown when no page is open. |
 | `mako.popup` | A sign-in popup window. |
 
-Menu bar: `Mako` (About Mako, Settings… ⌘., Edit Config File… ⌘,, Hide, Quit), `File` (New Trail, New Page in Trail, Open Location…, Close Page, Reopen Closed Page), `Edit` (… Find…, Find Next, Find Previous), `View` (Reload, Zoom In/Out, Actual Size, Developer Console), `History` (Back, Forward), `Trails` (Next Page, Previous Page, Move Page Up, Move Page Down, Indent Page, Outdent Page, Rename Page…, then one item per visible page, indented by depth, the active one checked).
+Menu bar: `Mako` (About Mako, Settings… ⌘., Edit Config File… ⌘,, Hide, Quit), `File` (New Trail, New Page in Trail, Open Location…, Close Page, Reopen Closed Page), `Edit` (… Find…, Find Next, Find Previous), `View` (Reload, Zoom In/Out, Actual Size, Developer Console), `History` (Back, Forward), `Trails` (Next Page, Previous Page, Move Page Up, Move Page Down, Indent Page, Outdent Page, Rename Page…, then one item per visible page, indented by depth, the active one checked). A trail's root item carries ⌘1…⌘9 and jumps: to the root, or from the root to the trail's last page. So `menu Trails "<root label>"` pressed while that root is active goes to the last page.
 
 ## Recipes
 

@@ -55,7 +55,7 @@ final class MenuFirstWindow: NSWindow {
     private static let owned: [(NSEvent.ModifierFlags, String)] = [
         (.command, "t"), ([.command, .option], "t"), ([.command, .shift], "t"),
         (.command, "w"), (.command, "l"), (.command, ","), (.command, "."), ([.command, .option], "c"),
-    ]
+    ] + (1...9).map { (.command, String($0)) }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         let mods = event.modifierFlags.intersection([.command, .option, .shift, .control])
@@ -287,12 +287,20 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
             trailsMenu.addItem(withTitle: title, action: action, keyEquivalent: "").target = self
         }
         trailsMenu.addItem(.separator())
+        var trail = 0
         for row in store.rows {
             let item = NSMenuItem(title: row.label, action: #selector(selectMenuRow(_:)), keyEquivalent: "")
             item.indentationLevel = row.depth
             item.target = self
             item.tag = Int(row.id)
             item.state = row.active ? .on : .off
+            // A trail's root carries its ⌘1…⌘9 jump, so each trail is listed once.
+            if row.depth == 0 {
+                trail += 1
+                item.action = #selector(jumpToTrail(_:))
+                item.tag = trail - 1
+                if trail <= 9 { item.keyEquivalent = String(trail) }
+            }
             trailsMenu.addItem(item)
         }
     }
@@ -445,6 +453,11 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
     @objc func renamePage(_: Any?) { if let id = store.active?.id { sidebar.beginRename(id) } }
 
     @objc func selectMenuRow(_ sender: NSMenuItem) { select(UInt64(sender.tag)) }
+    /// A trail's root, or from the root the trail's last page; the rule is the core's.
+    @objc func jumpToTrail(_ sender: NSMenuItem) {
+        Perf.measure("jumpToTrail")
+        if apply("jump", ["trail": sender.tag]) != nil { NSSound.beep() }
+    }
     private func select(_ id: UInt64) {
         Perf.measure("selectPage")
         apply("select", ["id": id])

@@ -71,6 +71,8 @@ pub enum Action {
     Place { id: Id, target: Id, place: Place },
     /// Move a page one step: among its siblings, under the page above, or out beside its parent.
     Nudge { id: Id, direction: Direction },
+    /// ⌘1…⌘9: go to a trail's root (0-based, in sidebar order); from the root, to its last page.
+    Jump { trail: usize },
 }
 
 fn yes() -> bool { true }
@@ -86,6 +88,7 @@ pub enum Direction { Up, Down, In, Out }
 #[derive(Clone, PartialEq, Debug)]
 pub enum Error {
     NoSuchPage(Id),
+    NoSuchTrail(usize),
     TrailCap(usize),
     NothingToUndo,
     IntoItself,
@@ -96,6 +99,7 @@ impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Error::NoSuchPage(id) => write!(f, "no page {id}"),
+            Error::NoSuchTrail(n) => write!(f, "no trail {}", n + 1),
             Error::TrailCap(max) => write!(f, "trail cap reached ({max})"),
             Error::NothingToUndo => write!(f, "nothing to undo"),
             Error::IntoItself => write!(f, "a page cannot move into itself"),
@@ -224,6 +228,13 @@ pub fn apply(state: &Trails, action: &Action, max_trails: usize) -> Result<Trail
                 _ => {} // already at the edge: nothing to do
             }
         }
+        Action::Jump { trail } => {
+            let root = *s.roots.get(*trail).ok_or(Error::NoSuchTrail(*trail))?;
+            let leaf = leaf(&s, root);
+            let id = if s.active == Some(root) { leaf } else { root };
+            s.active = Some(id);
+            reveal(&mut s, id);
+        }
         Action::Rename { id, name } => {
             s.nodes.get_mut(id).ok_or(Error::NoSuchPage(*id))?.name = name.clone().filter(|n| !n.trim().is_empty());
         }
@@ -256,6 +267,14 @@ fn relocate(s: &mut Trails, id: Id, parent: Option<Id>, max_trails: usize, at: i
         reveal(s, active);
     }
     Ok(())
+}
+
+/// The page reached by following the last child down from `id`: the end of the trail.
+fn leaf(s: &Trails, mut id: Id) -> Id {
+    while let Some(last) = s.nodes[&id].children.last() {
+        id = *last;
+    }
+    id
 }
 
 /// Expands every page above `id` so its row is visible.
@@ -543,6 +562,47 @@ mod tests {
         assert_eq!((s.active, s.nodes[&1].children.last().copied()), (Some(1), Some(6)));
         let a: Action = serde_json::from_str(r#"{"type":"open_child","parent":1,"url":"u","select":false}"#).unwrap();
         assert_eq!(a, Action::OpenChild { parent: 1, url: "u".into(), select: false });
+    }
+
+    fn jump(trail: usize) -> Action { Action::Jump { trail } }
+
+    #[test]
+    fn jump_goes_to_a_trails_root_then_its_last_page() {
+        // a(1) > [b(2) > [d(4)], c(3)], e(5); the leaf of trail 0 is c, its last child.
+        let s = run(&sample(), &[Action::Select { id: 4 }, jump(0)]);
+        assert_eq!(s.active, Some(1), "from inside the trail: its root");
+        let s = run(&s, &[jump(0)]);
+        assert_eq!(s.active, Some(3), "from the root: the last page");
+        let s = run(&s, &[jump(0)]);
+        assert_eq!(s.active, Some(1), "from the last page: back to the root");
+        assert_eq!(run(&sample(), &[jump(0)]).active, Some(1), "from another trail: the root");
+    }
+
+    #[test]
+    fn jump_follows_the_last_child_down_to_the_leaf() {
+        let s = run(&sample(), &[child(3, "f"), child(6, "g"), Action::Select { id: 1 }, jump(0)]);
+        assert_eq!(s.active, Some(7));
+    }
+
+    #[test]
+    fn jump_on_a_single_page_trail_stays_on_it() {
+        let s = run(&sample(), &[jump(1), jump(1)]);
+        assert_eq!(s.active, Some(5));
+    }
+
+    #[test]
+    fn jump_reveals_a_leaf_inside_collapsed_pages() {
+        let s = run(&sample(), &[child(3, "f"), Action::SetCollapsed { id: 3, collapsed: true },
+                                 Action::SetCollapsed { id: 1, collapsed: true }, jump(0)]);
+        assert_eq!(s.active, Some(6), "collapsing moved to the root, so the jump goes to the leaf");
+        assert!(rows(&s).iter().any(|r| r.active), "the leaf has a visible row");
+    }
+
+    #[test]
+    fn jump_to_a_missing_trail_is_an_error() {
+        assert_eq!(apply(&sample(), &jump(2), 3), Err(Error::NoSuchTrail(2)));
+        let a: Action = serde_json::from_str(r#"{"type":"jump","trail":0}"#).unwrap();
+        assert_eq!(a, jump(0));
     }
 
     #[test]
