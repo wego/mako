@@ -18,6 +18,7 @@ Trails replace tabs. A trail is a tree of pages in the sidebar: a followed link 
 - `trail-move` Trails → Move Page Up / Down, Indent Page, Outdent Page move the active page and everything beneath it; dragging a row onto another drops it before, after or inside that page. A move that would make a third trail is refused.
 - `trail-rename` double-click a row, right-click → Rename…, or Trails → Rename Page…; Enter saves, Escape cancels, an empty name goes back to the page title.
 - `trail-background-link` ⌘-click opens the link beneath the page without leaving it.
+- `trail-middle-click` middle-click on a link (`target=_blank` and single-page-app links included) opens it beneath the page in the background. On anything else it is a real left click: a navigation it starts within a second (`location = …`, `window.open`) opens in the background instead, and a control that does not navigate just runs its handler. Middle-click on a sidebar row closes that page (⇧⌘T undoes).
 - `trail-colors` each open trail has its own colour (`colors` in `trails.json`, keyed by root id): a rail down the rows' leading edge, the active row tinted with it, a dot on its Trails menu item. A trail keeps its colour while others close or move; a new trail takes the lowest free one.
 - `favicons` each row shows its site's icon: the one the loaded page declares (`link[rel~=icon]`, else `apple-touch-icon`), else `/favicon.ico`, so rows of pages not loaded yet get one too. A faint globe holds the place until then. Icons are fetched without cookies, only for http(s), never for a blocked host (redirects included), at most 1 MB, and only PNG, ICO, GIF or JPEG are decoded; a host that has none is not asked again until restart. The log says `favicon <host> from <url>` or `none at <url>`.
 - `sidebar-scroller` the sidebar shows a scroller only when its rows overflow, even with "Show scroll bars: Always".
@@ -54,6 +55,7 @@ Preconditions: baseline. For background runs set `MAKO_BACKGROUND=1` (then use `
 - Row ids are permanent page ids, not positions; read them from `trails.json` or `tree`.
 - Reopening a closed page reloads it. A fixture page that clicks its own link (a.html, b.html) then opens a new child again, so assert Undo Close with pages that do not (c.html).
 - ⌘T, ⌥⌘T, ⌘W, ⇧⌘T and ⌃Tab as real key presses are not covered by either script (keys need focus); they share the menu actions the scripts press.
+- `scripts/ux-headed` (takes the pointer and keyboard) covers middle-click on `fixtures/trails/m.html` and on sidebar rows, and ⌘1 as a key.
 - Not covered by any script: a real drag and drop, ⌘-click, the pointing-hand cursor and hover highlight (need a pointer, so a headed run), and downloads (they write to the real `~/Downloads`).
 - `smoke`, `perf` and `ab` still assert the old tab titles (`– 1/3`, `New Tab`) and shortcuts (⌘1). They fail until rewritten for trails.
 - A page inside a collapsed row has no sidebar row; selecting it (Trails menu cannot, `trails.json` + `select` via a link can) expands the way to it.

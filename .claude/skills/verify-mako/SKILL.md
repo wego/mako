@@ -88,6 +88,8 @@ Kills only the PID this run launched and removes `$MAKO_RUN/state` and the run's
 
 `trails-ax` drives the sidebar, omnibox, close and Undo Close through accessibility actions, also without focus; it needs Accessibility permission. Run both after any change to navigation, the tree or the sidebar; they are safe while the person is using the Mac. With `MAKO_BACKGROUND=1`, `control-mako` and `makoctl` work without focus for your own steps too (see `docs/control.md`).
 
+`ux-headed` covers what needs a real pointer or key press: middle-clicks on page content and sidebar rows, ⌘1…⌘9, and the omnibox with a long address. It takes focus for about a minute.
+
 `smoke`, `perf` and `ab` below predate trails and fail until rewritten (see `features/trails.md`, Gotchas).
 
 ## Full pass

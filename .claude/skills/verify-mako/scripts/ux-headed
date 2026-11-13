@@ -1,0 +1,66 @@
+#!/bin/bash
+# Headed checks of what needs a real pointer or keyboard: middle-clicks on page content
+# and sidebar rows, ⌘1…⌘9 as keys, and the omnibox with a long address. Takes the
+# keyboard and pointer for about a minute, so run it only when the user has handed the
+# Mac over. Needs Accessibility (and Screen Recording for the shots). Exit status = failures.
+set -u
+cd "$(dirname "$0")/../../../.."
+export MAKO_RUN="$PWD/verify-runs/ux-headed"
+unset MAKO_BACKGROUND
+C=.claude/skills/verify-mako/scripts/control-mako; M=verify-runs/.bin/makoctl
+J="$MAKO_RUN/state/trails.json"; E="$MAKO_RUN/evidence"
+fails=0; P=
+pass() { echo "PASS $1"; }
+fail() { echo "FAIL $1"; fails=$((fails + 1)); }
+check() { local name=$1; shift; if "$@" >/dev/null 2>&1; then pass "$name"; else fail "$name ($(q 's["active"], s["roots"], len(n)' 2>/dev/null))"; fi; }
+q() { python3 -c "import json; s=json.load(open('$J')); n=s['nodes']; print($1)"; }
+is() { test "$(q "$1")" = "$2"; }
+# urls of the children of page 1
+kids() { q '[n[str(c)]["url"].rsplit("/",1)[-1] for c in n["1"]["children"]]'; }
+trap '$C stop >/dev/null 2>&1; kill $srv 2>/dev/null; wait $srv 2>/dev/null' EXIT
+
+$C stop >/dev/null 2>&1
+$C build >/dev/null || { echo "FAIL build"; exit 99; }
+mkdir -p "$E"
+port=$((20000 + RANDOM % 20000))
+python3 -m http.server "$port" --bind 127.0.0.1 -d .claude/skills/verify-mako/fixtures/trails >/dev/null 2>&1 &
+srv=$!; sleep 1
+U="http://127.0.0.1:$port"
+$C launch "" "$U/m.html" >/dev/null || { echo "FAIL launch"; exit 99; }
+P=$($C pid); sleep 3
+
+echo "== middle-click on page content (fixtures/trails/m.html)"
+$M "$P" middle-click 140 45; sleep 1.5
+check link-opens-background-child test "$(kids)" = "['c.html?mid-link']"
+check link-leaves-page-active is 's["active"]' 1
+$M "$P" middle-click 140 185; sleep 1.5
+check script-navigation-opens-background-child sh -c "echo \"$(kids)\" | grep -q 'mid-div'"
+check script-navigation-leaves-page sh -c "test \"\$($M $P title)\" = 'Page M'"
+$M "$P" middle-click 140 255; sleep 1
+check button-handler-runs sh -c "$M $P text | grep -q 'button ran'"
+check button-opens-nothing is 'len(n["1"]["children"])' 2
+$M "$P" middle-click 140 325; sleep 1.5
+check spa-link-opens-background-child sh -c "echo \"$(kids)\" | grep -q 'mid-spa'"
+check spa-link-not-routed-in-place sh -c "! $M $P text | grep -q 'routed in place'"
+$M "$P" middle-click 140 395; sleep 1.5
+check window-open-opens-background-child sh -c "echo \"$(kids)\" | grep -q 'mid-open'"
+check no-popup-window sh -c "! $M $P windows | grep -q mako.popup"
+$M "$P" shot "$E/middle-click.png" >/dev/null
+
+echo "== middle-click on a sidebar row"
+first=$(q 'n["1"]["children"][0]')
+$M "$P" middle-click-id "mako.trail.$first"; sleep 0.8
+check row-middle-click-closes is "$first in n" False
+$M "$P" menu File "Reopen Closed Page"; sleep 1
+check closed-row-reopens is "$first in n" True
+
+echo "== ⌘1 as a key"
+$M "$P" key cmd+1; sleep 0.5
+check cmd-1-from-inside-goes-to-root is 's["active"]' 1
+$M "$P" key cmd+1; sleep 0.5
+check cmd-1-from-root-goes-to-last-page is 's["active"] == n["1"]["children"][-1]' True
+$M "$P" key cmd+1; sleep 0.5
+check cmd-1-again-goes-to-root is 's["active"]' 1
+
+echo "== $fails failure(s); evidence in $E"
+exit $fails

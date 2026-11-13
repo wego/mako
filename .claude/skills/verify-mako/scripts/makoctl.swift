@@ -110,6 +110,8 @@ let usage = """
     makoctl <pid> time-key <combo> <substring>   ms from key press until the title contains substring
     makoctl <pid> shot <path.png>          screenshot of the window
     makoctl <pid> click-id <ax-identifier> [fx fy]   real mouse click at a point of the element (fractions of its frame, default 0.5 0.5)
+    makoctl <pid> middle-click-id <ax-identifier> [fx fy]   real middle-button click there (a sidebar row)
+    makoctl <pid> middle-click <x> <y>     real middle-button click at x,y points from the page's top-left (CSS px at 100% zoom)
     """
 
 let args = Array(CommandLine.arguments.dropFirst())
@@ -138,7 +140,7 @@ func mainWindow() -> AXUIElement {
 func focus() {
     // MAKO_BACKGROUND=1: never take focus. Only AX actions work then (menu, press, set, confirm).
     if ProcessInfo.processInfo.environment["MAKO_BACKGROUND"] == "1" {
-        if ["key", "type", "time-key", "click-id"].contains(args[1]) { fail("\(args[1]) needs focus; not available with MAKO_BACKGROUND=1", 9) }
+        if ["key", "type", "time-key", "click-id", "middle-click-id", "middle-click"].contains(args[1]) { fail("\(args[1]) needs focus; not available with MAKO_BACKGROUND=1", 9) }
         return
     }
     guard let running = NSRunningApplication(processIdentifier: pid), !running.isActive else { return }
@@ -152,7 +154,26 @@ func focus() {
     usleep(150_000)
 }
 
-if ["menu", "key", "type", "time-key", "press", "click-id"].contains(args[1]) { focus() }
+if ["menu", "key", "type", "time-key", "press", "click-id", "middle-click-id", "middle-click"].contains(args[1]) { focus() }
+
+func frame(_ id: String) -> CGRect {
+    guard let e = find(app, id: id), let pos = attr(e, kAXPositionAttribute), let size = attr(e, kAXSizeAttribute) else { fail("no element \(id)", 4) }
+    var p = CGPoint.zero, sz = CGSize.zero
+    AXValueGetValue(pos as! AXValue, .cgPoint, &p)
+    AXValueGetValue(size as! AXValue, .cgSize, &sz)
+    return CGRect(origin: p, size: sz)
+}
+
+/// A real HID click; moves the user's pointer.
+func hidClick(at: CGPoint, button: CGMouseButton) {
+    CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: at, mouseButton: .left)!.post(tap: .cghidEventTap)
+    usleep(100_000)
+    let types: [CGEventType] = button == .left ? [.leftMouseDown, .leftMouseUp] : [.otherMouseDown, .otherMouseUp]
+    for type in types {
+        CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: at, mouseButton: button)!.post(tap: .cghidEventTap)
+        usleep(60_000)
+    }
+}
 
 func postCombo(_ combo: String, settle: Bool = true) {
     let parts = combo.lowercased().split(separator: "+").map(String.init)
@@ -211,21 +232,16 @@ case "press-id", "set", "confirm":
     default: result = AXUIElementPerformAction(e, kAXPressAction as CFString)
     }
     if result != .success { fail("\(args[1]) \(args[2]) failed: AXError \(result.rawValue)", 4) }
-case "click-id":
-    // A real HID click: moves the user's pointer. Stepper arrows: fy 0.25 is up, 0.75 is down (AX y grows downward).
+case "click-id", "middle-click-id":
+    // Stepper arrows: fy 0.25 is up, 0.75 is down (AX y grows downward).
     guard args.count > 2 else { fail(usage, 64) }
-    guard let e = find(app, id: args[2]), let pos = attr(e, kAXPositionAttribute), let size = attr(e, kAXSizeAttribute) else { fail("no element \(args[2])", 4) }
-    var p = CGPoint.zero, sz = CGSize.zero
-    AXValueGetValue(pos as! AXValue, .cgPoint, &p)
-    AXValueGetValue(size as! AXValue, .cgSize, &sz)
+    let f = frame(args[2])
     let fx = args.count > 3 ? Double(args[3]) ?? 0.5 : 0.5, fy = args.count > 4 ? Double(args[4]) ?? 0.5 : 0.5
-    let at = CGPoint(x: p.x + sz.width * fx, y: p.y + sz.height * fy)
-    CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: at, mouseButton: .left)!.post(tap: .cghidEventTap)
-    usleep(100_000)
-    for type in [CGEventType.leftMouseDown, .leftMouseUp] {
-        CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: at, mouseButton: .left)!.post(tap: .cghidEventTap)
-        usleep(60_000)
-    }
+    hidClick(at: CGPoint(x: f.minX + f.width * fx, y: f.minY + f.height * fy), button: args[1] == "click-id" ? .left : .center)
+case "middle-click":
+    guard args.count > 3, let x = Double(args[2]), let y = Double(args[3]) else { fail(usage, 64) }
+    let f = frame("mako.page")
+    hidClick(at: CGPoint(x: f.minX + x, y: f.minY + y), button: .center)
 case "windows":
     for w in (attr(app, kAXWindowsAttribute) as? [AXUIElement]) ?? [] { print(line(w)) }
 case "menu-items":

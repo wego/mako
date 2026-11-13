@@ -243,7 +243,8 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
     private func liveView(_ row: TrailRow) -> WKWebView {
         if let view = views[row.id] { return view }
         let id = row.id
-        let w = WKWebView(frame: .zero, configuration: webConfig)
+        let w = PageView(frame: .zero, configuration: webConfig)
+        w.onBackgroundLink = { [weak self] url in self?.apply("open_child", ["parent": id, "url": url.absoluteString, "select": false]) }
         w.navigationDelegate = self
         w.uiDelegate = self
         w.allowsBackForwardNavigationGestures = true
@@ -531,12 +532,15 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         // same document (#section) and links in sign-in popups stay where they are. This comes
         // before the block check so a blocked link shows its notice in the new page, not over
         // the page it was clicked on.
-        if action.navigationType == .linkActivated, mainFrame, let url, isWeb(url), let parent = id(of: webView),
-           !sameDocument(url, webView.url) {
-            log.info("child of \(parent) \(url.absoluteString, privacy: .public)")
-            // ⌘-click opens the page beneath this one without leaving it.
-            apply("open_child", ["parent": parent, "url": url.absoluteString, "select": !action.modifierFlags.contains(.command)])
-            return .cancel
+        // So does whatever a middle-click starts (a script's `location = …` or window.open).
+        if mainFrame, let url, isWeb(url), let parent = id(of: webView), !sameDocument(url, webView.url) {
+            let background = [.linkActivated, .other].contains(action.navigationType) && (webView as? PageView)?.claimBackground() == true
+            if background || action.navigationType == .linkActivated {
+                log.info("child of \(parent) \(url.absoluteString, privacy: .public)\(background ? " (middle-click)" : "", privacy: .public)")
+                // ⌘-click opens the page beneath this one without leaving it.
+                apply("open_child", ["parent": parent, "url": url.absoluteString, "select": !(background || action.modifierFlags.contains(.command))])
+                return .cancel
+            }
         }
         if let host = url?.host(), let reason = Core.blockReason(host: host) {
             guard mainFrame else {
@@ -614,6 +618,11 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
     /// from WebKit's configuration, which is what keeps window.opener alive for OAuth.
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
                  for action: WKNavigationAction, windowFeatures features: WKWindowFeatures) -> WKWebView? {
+        if let url = action.request.url, isWeb(url), let parent = id(of: webView), (webView as? PageView)?.claimBackground() == true {
+            log.info("child of \(parent) \(url.absoluteString, privacy: .public) (middle-click)")
+            apply("open_child", ["parent": parent, "url": url.absoluteString, "select": false])
+            return nil
+        }
         guard action.navigationType != .linkActivated else {
             if let url = action.request.url {
                 if isWeb(url), let parent = id(of: webView) {

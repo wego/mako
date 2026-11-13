@@ -273,6 +273,14 @@ private final class RowView: NSView, NSDraggingSource, NSTextFieldDelegate {
         if (note.userInfo?["NSTextMovement"] as? Int) != NSTextMovement.return.rawValue { endRename() }
     }
 
+    /// Middle-click closes the page, like its context menu's Close; ⇧⌘T brings it back.
+    override func otherMouseDown(with event: NSEvent) {
+        if event.buttonNumber != 2 { super.otherMouseDown(with: event) }
+    }
+    override func otherMouseUp(with event: NSEvent) {
+        if event.buttonNumber == 2 { sidebar.onClose(row.id) } else { super.otherMouseUp(with: event) }
+    }
+
     override func menu(for event: NSEvent) -> NSMenu? {
         let menu = NSMenu()
         menu.addItem(withTitle: "Rename…", action: #selector(renameFromMenu), keyEquivalent: "").target = self

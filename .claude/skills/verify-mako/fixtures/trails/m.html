@@ -1,0 +1,11 @@
+<!doctype html><title>Page M</title>
+<style>body{margin:0;font:16px -apple-system} .t{position:absolute;left:20px;width:240px;height:50px;display:flex;align-items:center;justify-content:center;background:#eef;border:1px solid #99c}</style>
+<a class="t" id="link" style="top:20px" href="c.html?mid-link">link</a>
+<a class="t" id="blank" style="top:90px" href="c.html?mid-blank" target="_blank">target=_blank link</a>
+<div class="t" id="div" style="top:160px" onclick="location='c.html?mid-div'">div that navigates</div>
+<button class="t" id="btn" style="top:230px" onclick="document.getElementById('out').textContent='button ran'">button</button>
+<a class="t" id="spa" style="top:300px" href="c.html?mid-spa" onclick="event.preventDefault();history.pushState({},'','?routed');document.getElementById('out').textContent='routed in place'">single-page-app link</a>
+<div class="t" id="open" style="top:370px" onclick="window.open('c.html?mid-open')">div that calls window.open</div>
+<p id="out" style="position:absolute;top:440px;left:20px">button idle</p>
+<p id="log" style="position:absolute;top:480px;left:20px"></p>
+<script>for (const t of ['mousedown','mouseup','click','auxclick']) addEventListener(t, e => { document.getElementById('log').textContent += `${t}:${e.button}:${e.isTrusted ? 'trusted' : 'synthetic'} `; }, true)</script>

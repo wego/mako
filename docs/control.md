@@ -73,6 +73,8 @@ Every command is `makoctl <pid> <command> [args]`. Commands that send input (`ke
 | `makoctl <pid> pointer-center` | Moves the mouse pointer over the middle of the page. Perf runs use it so cursor-update costs are measured the same way every time. Moves the user's real pointer. |
 | `makoctl <pid> shot <path.png>` | Screenshot of Mako's main window, even if other apps cover it. Exit 6 without Screen Recording permission. The only command that works without Accessibility permission. |
 | `makoctl <pid> click-id <ax-identifier> [fx fy]` | Real mouse click at a point inside the element: `fx`/`fy` are fractions of its frame (default the centre). For a stepper, `0.5 0.25` hits the up arrow and `0.5 0.75` the down arrow. Activates Mako and moves the user's real pointer, so it is refused with `MAKO_BACKGROUND=1` (exit 9). |
+| `makoctl <pid> middle-click-id <ax-identifier> [fx fy]` | Real middle-button click inside the element, like `click-id`: `middle-click-id mako.trail.3` closes that page. Activates Mako, moves the pointer, refused with `MAKO_BACKGROUND=1`. |
+| `makoctl <pid> middle-click <x> <y>` | Real middle-button click at `x`,`y` points from the top-left of `mako.page` (CSS pixels at 100% zoom), for page content such as the `fixtures/trails/m.html` targets. Same focus rules as `click-id`. |
 
 ### Acting
 
@@ -212,6 +214,7 @@ Set `MAKO_BACKGROUND=1` for both tools. `control-mako launch` then starts the te
 
 - `scripts/trails-bg`: trails behaviour (links nest, restart restore, lazy loading, trail cap, blocked links, form submits, trail colours, site icons) with no focus and no permissions. 21 checks.
 - `scripts/trails-ax`: the trails UI through accessibility actions, no focus: sidebar rows, collapse, omnibox, trail cap, close, Undo Close across a restart, moving and renaming pages, sidebar width, find in page. 36 checks. Needs Accessibility permission.
+- `scripts/ux-headed`: middle-clicks on page content (`fixtures/trails/m.html`) and sidebar rows, ⌘1…⌘9 as keys, the omnibox with a long address. Takes the pointer and keyboard; needs Accessibility.
 - `scripts/smoke`: every feature recipe in `.claude/skills/verify-mako/features/`, then `perf`. One `PASS`/`FAIL` line per check; exit status is the number of failures. Takes focus for about 3 minutes.
 - `scripts/perf`: performance budgets (launch, new tab, tab switch, memory, bundle size, Rust core). See the top of the script for the numbers.
 - `scripts/ab <base-checkout> <candidate-checkout> [rounds]`: paired A/B of in-app latency (launch, new tab, tab switch) between two built checkouts, interleaving launches so background load hits both alike. Prints medians, the median paired delta, and how often the candidate won. Use it to decide whether a change is faster; a single `perf` run is too noisy on a busy Mac.
