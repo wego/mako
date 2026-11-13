@@ -246,9 +246,9 @@ private final class RowView: NSView, NSDraggingSource, NSTextFieldDelegate {
     private var editor: NSTextField?
     private var indent: NSLayoutConstraint!
 
-    /// Levels the row is drawn in: its depth, capped so the name keeps 48 pt beside the toggle.
+    /// Levels the row is drawn in: its depth, capped so the name keeps 40 pt beside the toggle.
     /// Past the first level each adds 16 pt; the icon, gaps and toggle take 70.
-    var level: Int { min(row.depth, max(1, Int((bounds.width - 70 - 48) / 16) + 1)) }
+    var level: Int { min(row.depth, max(1, Int((bounds.width - 70 - 40) / 16) + 1)) }
 
     init(_ row: TrailRow, sidebar: Sidebar) {
         self.row = row
