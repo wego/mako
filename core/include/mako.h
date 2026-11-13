@@ -4,6 +4,7 @@
 // Strings returned are owned by the caller; release with mako_free. NULL = none.
 char *mako_config_error(const char *config);
 uint32_t mako_max_trails(const char *config);
+uint32_t mako_trail_limit(void);
 char *mako_set_setting(const char *config, const char *key, const char *value);
 bool mako_restore_session(const char *config);
 char *mako_resolve(const char *config, const char *input);

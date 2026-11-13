@@ -66,7 +66,7 @@ The `verify-mako` skill (`.claude/skills/verify-mako/`) launches an isolated ins
 
 `~/.config/mako/config`, re-read on every navigation:
 
-    max_trails = 3                         # trails (top-level pages); pages within a trail are unlimited
+    max_trails = 3                         # trails (top-level pages), 1–9; pages within a trail are unlimited
     restore_session = true                 # keep trails (and Undo Close) across restarts (default)
     search = https://duckduckgo.com/?q=%s
     block x.com                            # always, includes subdomains and embeds (iframes)

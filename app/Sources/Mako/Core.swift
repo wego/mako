@@ -36,6 +36,7 @@ enum Core {
     static var configError: String? { take(mako_config_error(config)) }
     static var restoreSession: Bool { mako_restore_session(config) }
     static var maxTrails: Int { Int(mako_max_trails(config)) }
+    static let trailLimit = Int(mako_trail_limit())
 
     /// Rewrites one `key = value` line of the config file, keeping the rest as the user wrote it.
     static func set(_ key: String, _ value: String) {

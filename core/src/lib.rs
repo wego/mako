@@ -68,8 +68,10 @@ pub fn parse_config(text: &str) -> Result<Config, String> {
                 // Left over from the tabs era. Rejecting it would make the shell fall back to
                 // the default config, which silently drops every block rule.
                 "max_tabs" => {}
+                // Clamped, not rejected: a parse error drops the blocklist along with it.
                 "max_trails" => {
-                    cfg.max_trails = val.parse().ok().filter(|n| *n > 0).ok_or_else(|| err("max_trails must be a positive integer"))?
+                    let n: usize = val.parse().ok().filter(|n| *n > 0).ok_or_else(|| err("max_trails must be a positive integer"))?;
+                    cfg.max_trails = n.min(trails::MAX_TRAILS)
                 }
                 "restore_session" => {
                     cfg.restore_session = val.parse().map_err(|_| err("restore_session must be true or false"))?
@@ -251,7 +253,7 @@ mod tests {
     #[test]
     fn max_trails_above_the_nine_trail_colours_is_capped_and_keeps_the_blocklist() {
         let c = cfg("max_trails = 10\nblock x.com\n");
-        assert_eq!(c.max_trails, 9);
+        assert_eq!(c.max_trails, trails::MAX_TRAILS);
         assert_eq!(c.blocks, [Block { domain: "x.com".into(), window: None }]);
         assert_eq!(cfg("max_trails = 9").max_trails, 9);
     }

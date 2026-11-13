@@ -33,6 +33,12 @@ pub extern "C" fn mako_max_trails(cfg: *const c_char) -> u32 {
     config(cfg).max_trails as u32
 }
 
+/// The highest max_trails the config accepts.
+#[no_mangle]
+pub extern "C" fn mako_trail_limit() -> u32 {
+    trails::MAX_TRAILS as u32
+}
+
 /// Config text with `key = value` set; the shell writes it back to the file.
 #[no_mangle]
 pub extern "C" fn mako_set_setting(cfg: *const c_char, key: *const c_char, value: *const c_char) -> *mut c_char {

@@ -17,7 +17,7 @@ final class Settings: NSObject {
         field.action = #selector(fieldChanged)
         field.widthAnchor.constraint(equalToConstant: 44).isActive = true
         stepper.minValue = 1
-        stepper.maxValue = 9
+        stepper.maxValue = Double(Core.trailLimit)
         stepper.valueWraps = false
         stepper.target = self
         stepper.action = #selector(stepped)
@@ -48,7 +48,7 @@ final class Settings: NSObject {
 
     /// Anything but a whole number in the stepper's range is refused and the saved value shown again.
     @objc private func fieldChanged(_: Any?) {
-        guard let n = Int(field.stringValue.trimmingCharacters(in: .whitespaces)), (1...9).contains(n) else { return display(Core.maxTrails) }
+        guard let n = Int(field.stringValue.trimmingCharacters(in: .whitespaces)), (1...Core.trailLimit).contains(n) else { return display(Core.maxTrails) }
         save(n)
     }
 
