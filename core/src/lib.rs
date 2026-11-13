@@ -54,60 +54,82 @@ pub fn set_setting(text: &str, key: &str, value: &str) -> String {
     lines.join("\n") + "\n"
 }
 
-pub fn parse_config(text: &str) -> Result<Config, String> {
-    let mut cfg = Config::default();
+/// The config read line by line, and every line it could not use.
+#[derive(Debug, PartialEq)]
+pub struct Parsed {
+    pub config: Config,
+    pub issues: Vec<Issue>,
+}
+
+/// One unusable line: `config line <line>: <why>: `<text>``.
+#[derive(Debug, PartialEq)]
+pub struct Issue {
+    pub line: usize,
+    pub message: String,
+}
+
+/// Never fails: each line applies on its own, so a typo costs only its own line.
+pub fn parse_config(text: &str) -> Parsed {
+    let mut config = Config::default();
+    let mut issues = vec![];
     for (i, raw) in text.lines().enumerate() {
         let line = raw.split('#').next().unwrap().trim();
         if line.is_empty() {
             continue;
         }
-        let err = |msg: &str| format!("config line {}: {msg}: `{line}`", i + 1);
-        if let Some((key, val)) = line.split_once('=') {
-            let val = val.trim();
-            match key.trim() {
-                // Left over from the tabs era. Rejecting it would make the shell fall back to
-                // the default config, which silently drops every block rule.
-                "max_tabs" => {}
-                // Clamped, not rejected: a parse error drops the blocklist along with it.
-                "max_trails" => {
-                    let n: usize = val.parse().ok().filter(|n| *n > 0).ok_or_else(|| err("max_trails must be a positive integer"))?;
-                    cfg.max_trails = n.min(trails::MAX_TRAILS)
-                }
-                "restore_session" => {
-                    cfg.restore_session = val.parse().map_err(|_| err("restore_session must be true or false"))?
-                }
-                "search" if val.contains("%s") => cfg.search = val.into(),
-                "search" => return Err(err("search must contain %s")),
-                _ => return Err(err("unknown setting")),
-            }
-            continue;
+        if let Err(why) = apply_line(&mut config, line) {
+            issues.push(Issue { line: i + 1, message: format!("config line {}: {why}: `{line}`", i + 1) });
         }
-        let mut parts = line.split_whitespace();
-        if parts.next() != Some("block") {
-            return Err(err("expected `block <domain> [HH:MM-HH:MM] [days]` or `key = value`"));
-        }
-        let domain = parts.next().ok_or_else(|| err("missing domain"))?.trim_start_matches("*.").to_lowercase();
-        let window = match parts.next() {
-            None => None,
-            Some(range) => {
-                let (start, end) = range.split_once('-').ok_or_else(|| err("bad time range"))?;
-                let days = match parts.next() {
-                    None => 0b111_1111,
-                    Some(d) => parse_days(d).ok_or_else(|| err("bad days"))?,
-                };
-                Some(Window {
-                    days,
-                    start: parse_hhmm(start).ok_or_else(|| err("bad start time"))?,
-                    end: parse_hhmm(end).ok_or_else(|| err("bad end time"))?,
-                })
-            }
-        };
-        if parts.next().is_some() {
-            return Err(err("trailing input"));
-        }
-        cfg.blocks.push(Block { domain, window });
     }
-    Ok(cfg)
+    Parsed { config, issues }
+}
+
+/// Applies one directive to `cfg`. On error, settings keep their defaults; a block
+/// line with a domain still blocks it, at all times, since the schedule is unknown.
+fn apply_line(cfg: &mut Config, line: &str) -> Result<(), String> {
+    if let Some((key, val)) = line.split_once('=') {
+        let val = val.trim();
+        match key.trim() {
+            // Left over from the tabs era.
+            "max_tabs" => {}
+            "max_trails" => {
+                let n: usize = val.parse().ok().filter(|n| *n > 0).ok_or("max_trails must be a positive integer")?;
+                cfg.max_trails = n.min(trails::MAX_TRAILS)
+            }
+            "restore_session" => cfg.restore_session = val.parse().map_err(|_| "restore_session must be true or false")?,
+            "search" if val.contains("%s") => cfg.search = val.into(),
+            "search" => return Err("search must contain %s".into()),
+            _ => return Err("unknown setting".into()),
+        }
+        return Ok(());
+    }
+    let mut parts = line.split_whitespace();
+    if parts.next() != Some("block") {
+        return Err("expected `block <domain> [HH:MM-HH:MM] [days]` or `key = value`".into());
+    }
+    let domain = parts.next().ok_or("missing domain")?.trim_start_matches("*.").to_lowercase();
+    let (window, problem) = match parse_window(parts.collect()) {
+        Ok(window) => (window, None),
+        Err(why) => (None, Some(format!("{why} – blocking it at all times"))),
+    };
+    cfg.blocks.push(Block { domain, window });
+    problem.map_or(Ok(()), Err)
+}
+
+/// `[HH:MM-HH:MM [days]]`; nothing means always.
+fn parse_window(schedule: Vec<&str>) -> Result<Option<Window>, &'static str> {
+    let (range, days) = match schedule[..] {
+        [] => return Ok(None),
+        [range] => (range, None),
+        [range, days] => (range, Some(days)),
+        _ => return Err("trailing input"),
+    };
+    let (start, end) = range.split_once('-').ok_or("bad time range")?;
+    Ok(Some(Window {
+        days: days.map_or(Some(0b111_1111), parse_days).ok_or("bad days")?,
+        start: parse_hhmm(start).ok_or("bad start time")?,
+        end: parse_hhmm(end).ok_or("bad end time")?,
+    }))
 }
 
 fn parse_hhmm(s: &str) -> Option<u16> {

@@ -14,13 +14,17 @@ fn out(s: Option<String>) -> *mut c_char {
 }
 
 fn config(p: *const c_char) -> Config {
-    parse_config(unsafe { text(p) }).unwrap_or_default()
+    parse_config(unsafe { text(p) }).config
 }
 
-/// Parse error for the config text, or NULL if valid.
+/// The first unusable config line, with how many more there are, or NULL if none.
 #[no_mangle]
 pub extern "C" fn mako_config_error(config: *const c_char) -> *mut c_char {
-    out(parse_config(unsafe { text(config) }).err())
+    let issues = parse_config(unsafe { text(config) }).issues;
+    out(issues.first().map(|first| match issues.len() {
+        1 => first.message.clone(),
+        n => format!("{} (and {} more)", first.message, n - 1),
+    }))
 }
 
 #[no_mangle]
