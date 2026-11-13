@@ -25,6 +25,10 @@ final class Sidebar: NSView {
     var iconFor: (TrailRow) -> NSImage? = { _ in nil }
 
     private let stack = NSStackView()
+    /// Shown only at the trail cap: a quiet note, not an alarm.
+    private let load = NSTextField(labelWithString: "")
+    private var rowsToBottom: NSLayoutConstraint!
+    private var rowsToLoad: NSLayoutConstraint!
     private var rowViews: [UInt64: RowView] = [:]
     private var generation = 0
 
@@ -45,13 +49,24 @@ final class Sidebar: NSView {
         scroll.documentView = document
         scroll.translatesAutoresizingMaskIntoConstraints = false
         addSubview(scroll)
+        load.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+        load.textColor = .secondaryLabelColor
+        load.toolTip = "At your trail limit – finish or close a trail to start another"
+        load.setAccessibilityIdentifier("mako.sidebar.load")
+        load.isHidden = true
+        load.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(load)
+        rowsToBottom = scroll.bottomAnchor.constraint(equalTo: bottomAnchor)
+        rowsToLoad = scroll.bottomAnchor.constraint(equalTo: load.topAnchor, constant: -6)
         setAccessibilityElement(true)
         setAccessibilityRole(.list)
         setAccessibilityIdentifier("mako.sidebar")
         setAccessibilityLabel("Trails")
         NSLayoutConstraint.activate([
             scroll.topAnchor.constraint(equalTo: topAnchor),
-            scroll.bottomAnchor.constraint(equalTo: bottomAnchor),
+            rowsToBottom,
+            load.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
+            load.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -10),
             scroll.leadingAnchor.constraint(equalTo: leadingAnchor),
             scroll.trailingAnchor.constraint(equalTo: trailingAnchor),
             document.topAnchor.constraint(equalTo: scroll.contentView.topAnchor),
@@ -84,6 +99,16 @@ final class Sidebar: NSView {
     }
 
     func beginRename(_ id: UInt64) { rowViews[id]?.beginRename() }
+
+    /// Open trails against the cap; the note shows once no new trail fits.
+    func showLoad(trails: Int, max: Int) {
+        let full = trails >= max
+        load.stringValue = "🧠 \(trails)/\(max)"
+        guard load.isHidden == full else { return }
+        load.isHidden = !full
+        rowsToBottom.isActive = !full
+        rowsToLoad.isActive = full
+    }
 
     /// Icons arrive after the rows are drawn; updating in place keeps a rename in progress.
     func refreshIcons() { rowViews.values.forEach { $0.setIcon(iconFor($0.row)) } }

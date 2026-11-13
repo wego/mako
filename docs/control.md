@@ -118,6 +118,7 @@ Stable identifiers Mako sets for automation. Prefer these, menu titles, and the 
 | `mako.page` | Container for the active tab's page. |
 | `mako.sidebar` | The trails sidebar. |
 | `mako.trail.<id>` | A sidebar row (a page). `id` is the page's permanent id, not a position. Its AX value is `selected` on the active page; its AX help is `site icon` once the site's icon has arrived, `no site icon` before. |
+| `mako.sidebar.load` | The note at the sidebar's foot, present only at the trail cap. Value `🧠 <open>/<max>`. |
 | `mako.trail.<id>.toggle` | That row's collapse/expand control (only when it has pages beneath it). |
 | `mako.trail.<id>.name` | The text field that replaces a row's label while it is being renamed (Trails → Rename Page…). `set` it, then `confirm` it. |
 | `mako.divider` | The edge between sidebar and page. Its value is the sidebar width in points; `set mako.divider 300` resizes it (kept between 160 and 480). |

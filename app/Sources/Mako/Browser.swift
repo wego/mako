@@ -235,6 +235,7 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         window.subtitle = ""
         if !omnibox.isHidden { updateHint() }
         sidebar.update(store.rows)
+        sidebar.showLoad(trails: store.rows.filter { $0.depth == 0 }.count, max: Core.maxTrails)
         rebuildTrailsMenu()
         if omnibox.isHidden, let view { window.makeFirstResponder(view) }
     }

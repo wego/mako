@@ -78,8 +78,10 @@ check settings-keeps-other-lines grep -qx 'block x.com' "$CF"
 check default-config-has-no-max-tabs sh -c "! grep -q max_tabs '$CF'"
 
 echo "== omnibox"
+check load-hidden-below-cap sh -c "! $M $P exists mako.sidebar.load"
 omni "New Trail" "$U/c.html?t2"
 check new-trail is 's["roots"]' "[1, 4]"
+check load-shown-at-cap test "$($M "$P" value mako.sidebar.load)" = "🧠 2/2"
 omni "New Trail" "$U/c.html?t3" 1
 check third-trail-refused is 'len(s["roots"])' 2
 check cap-message sh -c "$M $P value mako.omnibox.status | head -1 | grep -q 'trail cap reached (2)'"

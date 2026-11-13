@@ -7,6 +7,7 @@ Trails replace tabs. A trail is a tree of pages in the sidebar: a followed link 
 - `trail-link` a clicked link (including `target=_blank`) opens a child page and selects it.
 - `trail-in-place` a `#fragment` jump, form submit, redirect, or ⌘L address changes the current page; no new page.
 - `trail-new` ⌘T starts a trail; refused at the cap with a message in `mako.omnibox.status`.
+- `trail-load` at the cap the sidebar's foot shows a quiet `🧠 3/3` (`mako.sidebar.load`, tooltip "At your trail limit – finish or close a trail to start another"); below the cap it is gone from the window and the AX tree.
 - `trail-child` ⌥⌘T opens a page beneath the current one from the omnibox.
 - `trail-external` a link from another app starts a trail, or at the cap opens beneath the current page.
 - `trail-select` a sidebar row, a Trails menu item, or ⌃Tab / ⌃⇧Tab selects a page.
