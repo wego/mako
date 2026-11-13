@@ -23,7 +23,8 @@ srv=$!; sleep 1
 $C launch "" "$U/storage.html" >/dev/null || { echo "FAIL launch"; exit 99; }
 P=$($C pid)
 check run-starts-empty $M "$P" wait-title "cookie=no local=no" 8
-$M "$P" press "Set storage"
+# The title updates before the page's AX tree holds the button, so a press right away finds nothing.
+for _ in $(seq 25); do $M "$P" press "Set storage" >/dev/null 2>&1 && break; sleep 0.2; done
 check storage-set-in-run $M "$P" wait-title "cookie=yes local=yes" 3
 MAKO_RUN="$other" $C launch "" "$U/storage.html" >/dev/null || { echo "FAIL launch of the second run"; exit 99; }
 check other-run-cannot-see $M "$(MAKO_RUN="$other" $C pid)" wait-title "cookie=no local=no" 8
