@@ -101,6 +101,8 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
     /// Page dialogs shown per web view, and web views the person has silenced.
     private var dialogsShown: [ObjectIdentifier: Int] = [:]
     private var silenced: Set<ObjectIdentifier> = []
+    /// Web views with a navigation the person started from Mako (address bar, Back, Forward, Reload).
+    private var userLoads: Set<ObjectIdentifier> = []
     private let webConfig = WKWebViewConfiguration()
     private let container = NSView()
     private let sidebar = Sidebar()
@@ -267,6 +269,7 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         recency.removeAll { $0 == id }
         dialogsShown[ObjectIdentifier(view)] = nil
         silenced.remove(ObjectIdentifier(view))
+        userLoads.remove(ObjectIdentifier(view))
         if view === shown { shown = nil }
         view.removeFromSuperview()
     }
@@ -393,7 +396,7 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         var error: String?
         switch omniTarget {
         case .current:
-            if let shown { shown.load(URLRequest(url: url)) } else { error = store.apply("open_trail", ["url": url.absoluteString]) }
+            if shown != nil { userLoad { $0.load(URLRequest(url: url)) } } else { error = store.apply("open_trail", ["url": url.absoluteString]) }
         case .newTrail:
             error = store.apply("open_trail", ["url": url.absoluteString])
         case .child(let parent):
@@ -419,9 +422,14 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         showOmnibox(for: .child(parent))
     }
     @objc func openLocation(_: Any?) { showOmnibox(for: .current, text: shown.flatMap(page)?.absoluteString) }
-    @objc func back(_: Any?) { shown?.goBack() }
-    @objc func forward(_: Any?) { shown?.goForward() }
-    @objc func reload(_: Any?) { shown?.reload() }
+    @objc func back(_: Any?) { userLoad { $0.goBack() } }
+    @objc func forward(_: Any?) { userLoad { $0.goForward() } }
+    @objc func reload(_: Any?) { userLoad { $0.reload() } }
+    private func userLoad(_ go: (WKWebView) -> WKNavigation?) {
+        guard let shown else { return }
+        userLoads.insert(ObjectIdentifier(shown))
+        if go(shown) == nil { userLoads.remove(ObjectIdentifier(shown)) }
+    }
     @objc func zoomIn(_: Any?) { shown?.pageZoom += 0.1 }
     @objc func zoomOut(_: Any?) { if let shown { shown.pageZoom = max(0.3, shown.pageZoom - 0.1) } }
     @objc func zoomReset(_: Any?) { shown?.pageZoom = 1 }
@@ -632,6 +640,7 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         if let popup = closing.contentView {
             dialogsShown[ObjectIdentifier(popup)] = nil
             silenced.remove(ObjectIdentifier(popup))
+            userLoads.remove(ObjectIdentifier(popup))
         }
         // Hand focus back to the page that opened the sign-in.
         if !Self.background { window.makeKeyAndOrderFront(nil) }
@@ -691,8 +700,10 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         return input?.stringValue ?? ""
     }
 
-    /// Dialog counts and silencing belong to a document, as in Safari, not to the view.
+    /// Only a load the person started lifts silencing: a page that reloads or redirects
+    /// itself between alerts would otherwise reset its own count and loop again.
     func webView(_ webView: WKWebView, didCommit _: WKNavigation!) {
+        guard userLoads.remove(ObjectIdentifier(webView)) != nil else { return }
         dialogsShown[ObjectIdentifier(webView)] = nil
         silenced.remove(ObjectIdentifier(webView))
     }
