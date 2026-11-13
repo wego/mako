@@ -1,6 +1,6 @@
 #!/bin/bash
 # Headed checks of what needs a real pointer or keyboard: middle-clicks on page content
-# and sidebar rows, ⌘1…⌘9 as keys, and the omnibox with a long address. Takes the
+# (target=_blank links included) and sidebar rows, ⌘1…⌘9 as keys, and the omnibox with a long address. Takes the
 # keyboard and pointer for about a minute, so run it only when the user has handed the
 # Mac over. Needs Accessibility (and Screen Recording for the shots). Exit status = failures.
 set -u
@@ -52,12 +52,15 @@ echo "== middle-click on page content (fixtures/trails/m.html)"
 $M "$P" middle-click 140 45; sleep 1.5
 check link-opens-background-child test "$(kids)" = "['c.html?mid-link']"
 check link-leaves-page-active is 's["active"]' 1
+$M "$P" middle-click 140 115; sleep 1.5
+check blank-link-opens-background-child sh -c "echo \"$(kids)\" | grep -q 'mid-blank'"
+check blank-link-leaves-page-active is 's["active"]' 1
 $M "$P" middle-click 140 185; sleep 1.5
 check script-navigation-opens-background-child sh -c "echo \"$(kids)\" | grep -q 'mid-div'"
 check script-navigation-leaves-page sh -c "test \"\$($M $P title)\" = 'Page M'"
 $M "$P" middle-click 140 255; sleep 1
 check button-handler-runs sh -c "$M $P text | grep -q 'button ran'"
-check button-opens-nothing is 'len(n["1"]["children"])' 2
+check button-opens-nothing is 'len(n["1"]["children"])' 3
 $M "$P" middle-click 140 325; sleep 1.5
 check spa-link-opens-background-child sh -c "echo \"$(kids)\" | grep -q 'mid-spa'"
 check spa-link-not-routed-in-place sh -c "! $M $P text | grep -q 'routed in place'"
