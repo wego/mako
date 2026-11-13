@@ -30,7 +30,7 @@ Preconditions: baseline; `MAKO_BACKGROUND=1` is fine for every step. Serve the t
 
 - `tree` without `--menus` omits the menu bar; read menu state with `menu-items`.
 - Only the shown page's web view is in the window, so other loaded pages' `mako.trail.<id>.page` are absent from the tree.
-- `mako.omnibox*` stay in the tree while the panel is hidden, so `exists` does not prove visibility; use `shot`.
+- `mako.omnibox*` leave the tree while the panel is hidden (`exists` exits 4), so `exists mako.omnibox` proves the panel is showing.
 - `makoctl` does not print AX help, so a row's `site icon` / `no site icon` help is not readable through it; `ux-headed` judges icons by colour.
 - A plain NSView only shows up in the AX tree when marked as an accessibility element with a role. New Mako containers need both, or their identifier silently disappears.
 - Two pages with one title give two Trails menu items with that title; `menu Trails "<title>"` presses the first. Use `press-id mako.trail.<id>` to pick one.

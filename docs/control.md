@@ -127,7 +127,7 @@ Stable identifiers Mako sets for automation. Prefer these, menu titles, and the 
 | `mako.divider` | The edge between sidebar and page. Its value is the sidebar width in points; `set mako.divider 300` resizes it (kept between 160 and the smaller of 480 and the window width less 400). |
 | `mako.settings.maxTrails` | Settings window (⌘., or `menu Mako "Settings…"`) trail-cap field. `set` then `confirm` saves 1–9 to the config as `max_trails = N`; anything else is refused and the saved value shown again. `.stepper` is the stepper beside it. |
 | `mako.trail.<id>.page` | A loaded page's web view. Only recently shown pages are loaded. |
-| `mako.omnibox` | The address bar panel (present while hidden). |
+| `mako.omnibox` | The address bar panel; absent from the tree while hidden. |
 | `mako.omnibox.field` | Its text field; `value` is the text in it. |
 | `mako.omnibox.status` | The lines under the field: errors, what Enter will do, and the trail and page counts. |
 | `mako.blank` | The app icon shown when no page is open. |

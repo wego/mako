@@ -38,7 +38,7 @@ Preconditions: baseline, launched with `$C launch "" https://example.com`; `MAKO
 
 ## Gotchas
 
-- `mako.omnibox*` elements stay in the AX tree while the panel is hidden, so `exists` does not prove visibility. Use `shot` for that.
+- `mako.omnibox*` elements leave the AX tree while the panel is hidden (`exists` exits 4), so `exists mako.omnibox` proves the panel is showing.
 - `v1.2`-style input is treated as search, not a domain, by design (the top-level domain must be letters).
 - `set` changes the field without the typing notification, and the font is refit on typing (from source), so judge `omni-one-line` from typed input, as `ux-headed` does.
 - The status line keeps its last text while the panel is hidden; read it after opening the panel.
