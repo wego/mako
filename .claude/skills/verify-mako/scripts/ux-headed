@@ -17,13 +17,31 @@ q() { python3 -c "import json; s=json.load(open('$J')); n=s['nodes']; print($1)"
 is() { test "$(q "$1")" = "$2"; }
 # urls of the children of page 1
 kids() { q '[n[str(c)]["url"].rsplit("/",1)[-1] for c in n["1"]["children"]]'; }
+# colours <png>: shell assignments counting magenta, cyan and yellow pixels, and the mean y of each
+colours() { sips -s format bmp "$1" --out "$1.bmp" >/dev/null 2>&1 && python3 - "$1.bmp" <<'PY'
+import struct, sys
+d = open(sys.argv[1], "rb").read()
+off, (w, h), bpp = struct.unpack_from("<I", d, 10)[0], struct.unpack_from("<ii", d, 18), struct.unpack_from("<H", d, 28)[0]
+stride, n = (w * bpp + 31) // 32 * 4, bpp // 8
+kinds = {"magenta": lambda r, g, b: r > 180 and g < 110 and b > 180, "cyan": lambda r, g, b: r < 160 and g > 180 and b > 180,
+         "yellow": lambda r, g, b: r > 180 and g > 180 and b < 110}
+found = {k: [] for k in kinds}
+for y in range(0, abs(h), 2):
+    row = off + (y if h < 0 else abs(h) - 1 - y) * stride
+    for x in range(0, w, 2):
+        b, g, r = d[row + x * n:row + x * n + 3]
+        for k, test in kinds.items():
+            if test(r, g, b): found[k].append(y)
+for k, ys in found.items(): print(f"{k}={len(ys)} {k}_y={sum(ys) // len(ys) if ys else -1}")
+PY
+}
 trap '$C stop >/dev/null 2>&1; kill $srv 2>/dev/null; wait $srv 2>/dev/null' EXIT
 
 $C stop >/dev/null 2>&1
 $C build >/dev/null || { echo "FAIL build"; exit 99; }
 mkdir -p "$E"
 port=$((20000 + RANDOM % 20000))
-python3 -m http.server "$port" --bind 127.0.0.1 -d .claude/skills/verify-mako/fixtures/trails >/dev/null 2>&1 &
+.claude/skills/verify-mako/scripts/fixture-server "$port" &
 srv=$!; sleep 1
 U="http://127.0.0.1:$port"
 $C launch "" "$U/m.html" >/dev/null || { echo "FAIL launch"; exit 99; }
@@ -45,6 +63,9 @@ check spa-link-not-routed-in-place sh -c "! $M $P text | grep -q 'routed in plac
 $M "$P" middle-click 140 395; sleep 1.5
 check window-open-opens-background-child sh -c "echo \"$(kids)\" | grep -q 'mid-open'"
 check no-popup-window sh -c "! $M $P windows | grep -q mako.popup"
+$M "$P" middle-click 140 465; sleep 1.5
+check download-link-opens-no-page sh -c "! echo \"$(kids)\" | grep -q report"
+check download-link-saves-the-file test -f "$MAKO_RUN/state/downloads/report.txt"
 $M "$P" shot "$E/middle-click.png" >/dev/null
 
 echo "== middle-click on a sidebar row"
@@ -70,6 +91,16 @@ check omnibox-holds-the-whole-address test "$($M "$P" value mako.omnibox.field)"
 $M "$P" shot "$E/omnibox-long.png" >/dev/null
 $M "$P" key escape
 echo "look: omnibox-short.png at 18 pt, omnibox-long.png on one line at 11 pt, same panel height"
+
+echo "== each page shows its own declared icon, and /favicon.ico arriving later does not replace it"
+$C stop >/dev/null; $C launch "" "$U/g.html" >/dev/null || { echo "FAIL launch"; exit 99; }
+P=$($C pid); sleep 5
+$M "$P" shot "$E/site-icons.png" >/dev/null
+colours "$E/site-icons.png" >"$E/site-icons.txt"; eval "$(cat "$E/site-icons.txt")"; tr '\n' ' ' <"$E/site-icons.txt"; echo
+check page-g-row-shows-g-icon test "$magenta" -ge 40
+check page-h-row-shows-h-icon test "$cyan" -ge 40
+check g-row-above-h-row test "$magenta_y" -lt "$cyan_y"
+check favicon-ico-not-shown test "$yellow" -eq 0
 
 echo "== $fails failure(s); evidence in $E"
 exit $fails

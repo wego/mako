@@ -6,6 +6,7 @@
 <button class="t" id="btn" style="top:230px" onclick="document.getElementById('out').textContent='button ran'">button</button>
 <a class="t" id="spa" style="top:300px" href="c.html?mid-spa" onclick="event.preventDefault();history.pushState({},'','?routed');document.getElementById('out').textContent='routed in place'">single-page-app link</a>
 <div class="t" id="open" style="top:370px" onclick="window.open('c.html?mid-open')">div that calls window.open</div>
-<p id="out" style="position:absolute;top:440px;left:20px">button idle</p>
-<p id="log" style="position:absolute;top:480px;left:20px"></p>
+<a class="t" id="dl" style="top:440px" href="report.txt" download="report.txt">download link</a>
+<p id="out" style="position:absolute;top:510px;left:20px">button idle</p>
+<p id="log" style="position:absolute;top:550px;left:20px"></p>
 <script>for (const t of ['mousedown','mouseup','click','auxclick']) addEventListener(t, e => { document.getElementById('log').textContent += `${t}:${e.button}:${e.isTrusted ? 'trusted' : 'synthetic'} `; }, true)</script>

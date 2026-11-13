@@ -37,7 +37,7 @@ cp -R build/Mako.app "$app"
 /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier com.wego.mako.verify.trails-bg" -c "Delete :CFBundleURLTypes" "$app/Contents/Info.plist"
 codesign --force --sign - "$app" 2>/dev/null
 port=$((20000 + RANDOM % 20000))
-python3 -m http.server "$port" --bind 127.0.0.1 -d .claude/skills/verify-mako/fixtures/trails >/dev/null 2>&1 &
+.claude/skills/verify-mako/scripts/fixture-server "$port" &
 srv=$!; sleep 1
 U="http://127.0.0.1:$port"
 before=$(front)
@@ -82,6 +82,11 @@ echo "== site icons"
 stop; rm -f "$run/state/trails.json"; launch "$U/f.html"
 logs >"$run/evidence/favicon-log.txt"
 check declared-icon-fetched grep -q "favicon 127.0.0.1:$port from $U/icon.png" "$run/evidence/favicon-log.txt"
+stop; rm -f "$run/state/trails.json"; launch "$U/g.html"
+logs >"$run/evidence/favicon-pages-log.txt"
+check declared-icon-fetched-while-favicon-ico-pending grep -q "from $U/g.png" "$run/evidence/favicon-pages-log.txt"
+check same-host-page-fetches-its-own-icon grep -q "from $U/h.png" "$run/evidence/favicon-pages-log.txt"
+check late-favicon-ico-still-arrives grep -q "from $U/favicon.ico" "$run/evidence/favicon-pages-log.txt"
 
 echo "== a web page cannot open local files through a link"
 stop; rm -f "$run/state/trails.json"; launch "$U/e.html"
