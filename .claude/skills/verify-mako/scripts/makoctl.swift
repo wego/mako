@@ -121,17 +121,24 @@ guard args.count >= 2, let pid = pid_t(args[0]) else { fail(usage, 64) }
 guard AXIsProcessTrusted() || args[1] == "shot" else { fail("accessibility permission missing for this terminal", 2) }
 guard NSRunningApplication(processIdentifier: pid) != nil else { fail("pid \(pid) not running", 3) }
 let app = AXUIElementCreateApplication(pid)
+
+// While the screen is locked, or when this terminal's grant goes stale, every app reports
+// itself as its own window, so walking the tree from the app never ends and overflows the
+// stack. Every command that reads the tree checks first and exits 8 instead.
+func failIfDegraded() {
+    guard (attr(app, kAXWindowsAttribute) as? [AXUIElement])?.first.map({ CFEqual($0, app) }) == true else { return }
+    let locked = (CGSessionCopyCurrentDictionary() as? [String: Any])?["CGSSessionScreenIsLocked"] as? Bool ?? false
+    fail(locked
+        ? "accessibility degraded: the screen is locked; unlock it and retry"
+        : "accessibility degraded system-wide (window == app) with the screen unlocked; re-toggle the terminal in Privacy & Security → Accessibility and restart it", 8)
+}
+if args[1] != "shot" { failIfDegraded() }
+
 func mainWindow() -> AXUIElement {
     guard let window = (attr(app, kAXWindowsAttribute) as? [AXUIElement])?.first(where: { str($0, kAXSubroleAttribute) == kAXStandardWindowSubrole })
     else {
-        // macOS sometimes degrades AX for this terminal: every app reports itself as its own window.
-        // Re-toggling the terminal's Accessibility permission and restarting it fixes that.
-        if (attr(app, kAXWindowsAttribute) as? [AXUIElement])?.first.map({ CFEqual($0, app) }) == true {
-            let locked = (CGSessionCopyCurrentDictionary() as? [String: Any])?["CGSSessionScreenIsLocked"] as? Bool ?? false
-            fail(locked
-                ? "accessibility degraded: the screen is locked; unlock it and retry"
-                : "accessibility degraded system-wide (window == app) with the screen unlocked; re-toggle the terminal in Privacy & Security → Accessibility and restart it", 8)
-        }
+        // The screen can lock while wait-title or time-key polls.
+        failIfDegraded()
         fail("no standard window")
     }
     return window
