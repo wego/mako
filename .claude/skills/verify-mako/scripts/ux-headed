@@ -26,7 +26,8 @@ stride, n = (w * bpp + 31) // 32 * 4, bpp // 8
 kinds = {"magenta": lambda r, g, b: r > 180 and g < 110 and b > 180, "cyan": lambda r, g, b: r < 160 and g > 180 and b > 180,
          "yellow": lambda r, g, b: r > 180 and g > 180 and b < 110}
 found = {k: [] for k in kinds}
-for y in range(0, abs(h), 2):
+# Rows start below the title bar (2x shot), whose yellow minimize button would count.
+for y in range(60, abs(h), 2):
     row = off + (y if h < 0 else abs(h) - 1 - y) * stride
     for x in range(0, w, 2):
         b, g, r = d[row + x * n:row + x * n + 3]
