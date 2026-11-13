@@ -1,6 +1,6 @@
 # Page dialogs
 
-A page's `alert()`, `confirm()` and `prompt()` show as a sheet on the window holding the page (the main window, or a sign-in popup) and the page waits for the person's answer. The sheet shows the page's message with the frame's host beneath it. OK is the default button (Return); confirm and prompt add Cancel (Escape). A page in a trail that is not shown has no window, so its dialogs are answered as if dismissed (alert closes, confirm is false, prompt is null) and logged as `dialog from <host> dismissed: page not shown`.
+A page's `alert()`, `confirm()` and `prompt()` show as a sheet on the window holding the page (the main window, or a sign-in popup) and the page waits for the person's answer. The sheet's bold line is the site (with its port, "This page" when there is none, and "(embedded in this page)" for a frame), so page text cannot pose as another site; the page's message sits beneath it. From a page's second dialog on, a "Don’t show more dialogs from this page" checkbox appears; once ticked, that page's dialogs are answered as if dismissed, so a page looping on `alert()` cannot lock the window. OK is the default button (Return); confirm and prompt add Cancel (Escape). A page in a trail that is not shown has no window, so its dialogs are answered as if dismissed (alert closes, confirm is false, prompt is null) and logged as `dialog from <host> dismissed`.
 
 ## Sub-features
 

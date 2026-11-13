@@ -98,6 +98,9 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
     /// Script-opened windows (OAuth sign-in) live outside the trails.
     private var popups: [NSWindow] = []
     private var popupObservations: [NSKeyValueObservation] = []
+    /// Page dialogs shown per web view, and web views the person has silenced.
+    private var dialogsShown: [ObjectIdentifier: Int] = [:]
+    private var silenced: Set<ObjectIdentifier> = []
     private let webConfig = WKWebViewConfiguration()
     private let container = NSView()
     private let sidebar = Sidebar()
@@ -262,6 +265,8 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         observations[id] = nil
         reported[id] = nil
         recency.removeAll { $0 == id }
+        dialogsShown[ObjectIdentifier(view)] = nil
+        silenced.remove(ObjectIdentifier(view))
         if view === shown { shown = nil }
         view.removeFromSuperview()
     }
@@ -624,6 +629,10 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
     func windowWillClose(_ notification: Notification) {
         guard let closing = notification.object as? NSWindow, popups.contains(closing) else { return }
         popups.removeAll { $0 === closing }
+        if let popup = closing.contentView {
+            dialogsShown[ObjectIdentifier(popup)] = nil
+            silenced.remove(ObjectIdentifier(popup))
+        }
         // Hand focus back to the page that opened the sign-in.
         if !Self.background { window.makeKeyAndOrderFront(nil) }
         window.makeFirstResponder(omnibox.isHidden ? shown : field)
@@ -650,23 +659,34 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
     /// A page dialog as a sheet on the page's own window. nil when cancelled.
     private func ask(_ message: String, from frame: WKFrameInfo, in webView: WKWebView,
                      cancellable: Bool, input: NSTextField? = nil) async -> String? {
-        let host = frame.securityOrigin.host
+        let origin = frame.securityOrigin
+        let host = origin.host.isEmpty ? "This page" : origin.port == 0 ? origin.host : "\(origin.host):\(origin.port)"
+        let page = ObjectIdentifier(webView)
         // A page in a trail that isn't shown has no window; answering for it, as WebKit
         // would, beats pulling the person to a page they didn't pick.
-        guard let window = webView.window else {
-            log.info("dialog from \(host, privacy: .public) dismissed: page not shown")
+        guard let window = webView.window, !silenced.contains(page) else {
+            log.info("dialog from \(host, privacy: .public) dismissed")
             return nil
         }
+        dialogsShown[page, default: 0] += 1
         let alert = NSAlert()
-        alert.messageText = message
-        alert.informativeText = host
+        // The origin takes the bold line so page text cannot pose as another site.
+        alert.messageText = frame.isMainFrame ? host : "\(host) (embedded in this page)"
+        alert.informativeText = message
         alert.addButton(withTitle: "OK").setAccessibilityIdentifier("mako.dialog.ok")
         if cancellable { alert.addButton(withTitle: "Cancel").setAccessibilityIdentifier("mako.dialog.cancel") }
         if let input {
             alert.accessoryView = input
             alert.window.initialFirstResponder = input
         }
-        guard await alert.beginSheetModal(for: window) == .alertFirstButtonReturn else { return nil }
+        // A sheet blocks the whole window, so a page looping on alert() must be stoppable.
+        if dialogsShown[page, default: 0] > 1 {
+            alert.showsSuppressionButton = true
+            alert.suppressionButton?.title = "Don’t show more dialogs from this page"
+        }
+        let answer = await alert.beginSheetModal(for: window)
+        if alert.suppressionButton?.state == .on { silenced.insert(page) }
+        guard answer == .alertFirstButtonReturn else { return nil }
         return input?.stringValue ?? ""
     }
 
