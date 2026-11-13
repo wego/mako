@@ -80,7 +80,7 @@ launch)
   wipe_data
   prepare_app
   rm -rf "$run/state"; mkdir -p "$run/state" "$run/evidence"
-  printf 'max_tabs = 3\nblock x.com\n' > "$run/state/config"
+  printf 'max_trails = 3\nblock x.com\n' > "$run/state/config"
   if [ $# -gt 0 ]; then
     if [ -f "$1" ]; then cp "$1" "$run/state/config"; elif [ -n "$1" ]; then echo "no config file $1 (pass \"\" for the default)"; exit 64; fi
     shift

@@ -45,7 +45,7 @@ $C stop
 | Command | What it does |
 | --- | --- |
 | `control-mako build` | Runs `script/bundle` (Rust core + Swift app) and compiles `makoctl` into `verify-runs/.bin/`. |
-| `control-mako launch [config-file\|""] [url...]` | Fresh state (config, session, and website data), then start the run's own app copy. `""` uses the default test config (`max_tabs = 3`, `block x.com`); a file path copies that config. URLs open at launch. Refuses if this run already has a live instance. Prints `pid <n> ready`. |
+| `control-mako launch [config-file\|""] [url...]` | Fresh state (config, session, and website data), then start the run's own app copy. `""` uses the default test config (`max_trails = 3`, `block x.com`); a file path copies that config. URLs open at launch. Refuses if this run already has a live instance. Prints `pid <n> ready`. |
 | `control-mako pid` | Prints the running instance's pid. |
 | `control-mako doctor` | Read-only health check: process alive, it is this checkout's build, AX answers, screenshots work. Prints `OK …` or `FAIL <reason>`. Run it first and after anything surprising. |
 | `control-mako quit` | Graceful ⌘Q through the menu, so Mako saves its session. Waits for exit. Keeps `state/`. |

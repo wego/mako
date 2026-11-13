@@ -17,7 +17,7 @@ The terminal running the agent needs macOS Accessibility and Screen Recording pe
 
 ```sh
 $C build                        # script/bundle (Rust release lib + Swift app) + compiles makoctl
-$C launch                       # default disposable config: max_tabs = 3, block x.com
+$C launch                       # default disposable config: max_trails = 3, block x.com
 $C launch "" https://example.com             # default config, start URL
 $C launch path/to/config https://example.com   # custom config and start URLs
 P=$($C pid); M=verify-runs/.bin/makoctl
