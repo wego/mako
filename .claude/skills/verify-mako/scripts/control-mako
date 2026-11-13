@@ -45,7 +45,7 @@ refuse_if_running() {
   return 0
 }
 
-# start [url...]: opens the run's app copy on the existing $run/state (config, session.json).
+# start [url...]: opens the run's app copy on the existing $run/state (config, trails.json).
 start() {
   # LaunchServices launch (-n: separate instance); a bare exec gets no key events.
   # MAKO_BACKGROUND=1: launch behind everything and never activate, for runs while the Mac is in use.
@@ -74,7 +74,7 @@ build)
   echo "built $repo/build/Mako.app and $bin"
   ;;
 launch)
-  # launch [config-file|""] [url...]: fresh state (default config, no session, no website data), then start.
+  # launch [config-file|""] [url...]: fresh state (default config, no trails.json, no website data), then start.
   shift
   refuse_if_running
   [ -x "$repo/build/Mako.app/Contents/MacOS/Mako" ] || { echo "no build; run: control-mako build"; exit 1; }
@@ -89,14 +89,15 @@ launch)
   start "$@"
   ;;
 relaunch)
-  # relaunch [url...]: start again on the state the last instance left (session restore).
+  # relaunch [url...]: start again on the trails the last instance left.
   shift
   refuse_if_running
   [ -f "$run/state/config" ] || { echo "no state in $run; use launch"; exit 1; }
   start "$@"
   ;;
 quit)
-  # Graceful Cmd-Q via the menu so applicationWillTerminate runs; keeps state.
+  # Quit Mako via the menu so applicationWillTerminate runs; keeps state. In the background,
+  # SIGTERM instead, which skips that hook (trails.json is saved on every change anyway).
   pid=$(cat "$run/pid")
   if [ "${MAKO_BACKGROUND:-}" = 1 ]; then kill -TERM "$pid"; else "$bin" "$pid" menu Mako "Quit Mako"; fi
   i=0
