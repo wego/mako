@@ -25,7 +25,7 @@ silence_second() {
 trap '$C stop >/dev/null 2>&1; kill $srv 2>/dev/null; wait $srv 2>/dev/null' EXIT
 
 $C stop >/dev/null 2>&1
-$C build >/dev/null || { echo "FAIL build"; exit 99; }
+[ "${MAKO_SKIP_BUILD:-}" = 1 ] || $C build >/dev/null || { echo "FAIL build"; exit 99; }
 mkdir -p "$E"
 port=$((20000 + RANDOM % 20000)); U="http://127.0.0.1:$port"
 python3 -m http.server "$port" --bind 127.0.0.1 -d .claude/skills/verify-mako/fixtures/dialogs >/dev/null 2>&1 &

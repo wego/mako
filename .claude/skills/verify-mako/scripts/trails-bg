@@ -30,7 +30,7 @@ logs() { log show --info --last 2m --predicate "processID == $(pgrep -f "$exe" |
 launch() { open -n -g -a "$app" --env MAKO_CONFIG="$run/state/config" --env MAKO_BACKGROUND=1 --args "$@"; sleep "${WAIT:-5}"; }
 trap 'stop; kill $srv 2>/dev/null; wait $srv 2>/dev/null; .claude/skills/verify-mako/scripts/control-mako stop >/dev/null 2>&1' EXIT
 
-script/bundle >/dev/null || { echo "FAIL build"; exit 99; }
+[ "${MAKO_SKIP_BUILD:-}" = 1 ] || script/bundle >/dev/null || { echo "FAIL build"; exit 99; }
 stop; rm -rf "$run/state" "$run/app"; mkdir -p "$run/state" "$run/app" "$run/evidence"
 printf 'max_tabs = 3\nmax_trails = 2\nblock x.com\n' >"$run/state/config"  # a leftover max_tabs line must not drop the blocklist
 cp -R build/Mako.app "$app"

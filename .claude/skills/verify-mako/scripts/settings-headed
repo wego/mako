@@ -16,7 +16,7 @@ v() { $M "$P" value mako.settings.maxTrails 2>/dev/null; }
 trap '$C stop >/dev/null 2>&1' EXIT
 
 $C stop >/dev/null 2>&1
-$C build >/dev/null || { echo "FAIL build"; exit 99; }
+[ "${MAKO_SKIP_BUILD:-}" = 1 ] || $C build >/dev/null || { echo "FAIL build"; exit 99; }
 mkdir -p "$E"
 $C launch "" "about:blank" >/dev/null || { echo "FAIL launch"; exit 99; }
 P=$($C pid); sleep 3
