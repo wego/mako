@@ -1,0 +1,15 @@
+<!doctype html><title>waiting</title>
+<a href="#a">to a</a> <a href="#b">to b</a>
+<script>
+if (sessionStorage.getItem('reloaded')) {
+  setTimeout(() => { alert('Three.'); document.title = 'reload:done'; }, 300);
+} else {
+  let changes = 0;
+  addEventListener('hashchange', () => {
+    if (++changes < 3 || location.hash !== '#a') return;
+    sessionStorage.setItem('reloaded', '1');
+    location.reload();
+  });
+  setTimeout(() => { alert('One.'); alert('Two.'); document.title = 'alerts:done'; }, 300);
+}
+</script>
