@@ -34,6 +34,7 @@ $C stop
 - The copy has no `http`/`https` URL handlers, so macOS never offers it for links you open. It is re-signed ad hoc, so it never carries the passkey entitlement even when the daily build does.
 - `launch` starts the run with no website data; `stop` deletes that data (`~/Library/{WebKit,Caches,HTTPStorages,Preferences}/com.wego.mako.verify.<run>*`). Data persists across `quit` and `relaunch` within a run.
 - `MAKO_CONFIG` points at `verify-runs/<run>/state/config`, so your `~/.config/mako/config` and `session.json` are never read or written.
+- `MAKO_DOWNLOADS` points at `verify-runs/<run>/state/downloads`, so a run's downloads never land in your Downloads folder.
 - `makoctl` targets a process ID, never an app name, so it cannot reach another Mako by accident.
 
 `smoke` proves this on every run: a cookie set in one run is invisible to a second run, and your daily Mako's data files are unchanged afterwards.

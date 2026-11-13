@@ -588,7 +588,9 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
     private var downloads: [ObjectIdentifier: (file: URL, source: URL?)] = [:]
 
     func download(_ download: WKDownload, decideDestinationUsing response: URLResponse, suggestedFilename: String) async -> URL? {
-        let folder = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
+        // MAKO_DOWNLOADS lets verification runs keep their downloads out of the person's Downloads.
+        let folder = ProcessInfo.processInfo.environment["MAKO_DOWNLOADS"].map { URL(fileURLWithPath: $0) }
+            ?? FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
         // The page chooses the name: keep only its last path component so it cannot leave Downloads.
         let name = URL(fileURLWithPath: suggestedFilename).lastPathComponent
         var target = folder.appending(path: name)
