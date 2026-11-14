@@ -1,0 +1,23 @@
+#!/bin/bash
+# Exits 98 when synthetic pointer events do not reach Mako, as over a remote session such
+# as Jump Desktop, where keys still arrive: every pointer check in a headed script would
+# then fail for a reason that is not Mako's. The headed scripts run it before anything else.
+# Headed: takes focus and clicks the middle of the page. Exit 0 when the click lands.
+set -u
+cd "$(dirname "$0")/../../../.."
+unset MAKO_BACKGROUND
+export MAKO_RUN="$PWD/verify-runs/pointer-check"
+C=.claude/skills/verify-mako/scripts/control-mako; M=verify-runs/.bin/makoctl
+trap '$C stop >/dev/null 2>&1; kill $srv 2>/dev/null; wait $srv 2>/dev/null' EXIT
+
+$C stop >/dev/null 2>&1
+port=$((20000 + RANDOM % 20000))
+python3 -m http.server "$port" --bind 127.0.0.1 -d .claude/skills/verify-mako/fixtures/pointer >/dev/null 2>&1 &
+srv=$!; sleep 1
+out=$($C launch "" "http://127.0.0.1:$port/index.html" 2>&1) || { echo "FAIL launch: $out"; exit 99; }
+P=$($C pid)
+$M "$P" wait-title "Pointer check" 8 >/dev/null || { echo "FAIL pointer-check page never loaded"; exit 99; }
+$M "$P" click-id mako.page 0.5 0.5 >/dev/null
+for _ in $(seq 20); do $M "$P" title | grep -q "Pointer reached" && exit 0; sleep 0.1; done
+echo "UNREACHABLE pointer events don't reach Mako (remote session such as Jump Desktop?) – run at the Mac"
+exit 98

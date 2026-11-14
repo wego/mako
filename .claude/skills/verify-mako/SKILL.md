@@ -11,7 +11,7 @@ All commands run from the repo root. `C=.claude/skills/verify-mako/scripts/contr
 
 ## Requirements
 
-The terminal running the agent needs macOS Accessibility and Screen Recording permission (System Settings → Privacy & Security). `doctor` fails loudly when either is missing. While the screen is locked, macOS degrades AX for every client: each app reports itself as its own window. Every `makoctl` command except `shot` then exits 8 with `accessibility degraded: the screen is locked`; ask the user to unlock and retry. If it prints the same failure with the screen unlocked, the grant itself went stale; only the user can fix that, by toggling the terminal off and on in Accessibility and restarting it. Stop and ask either way; do not retry in a loop. Rust (`cargo`) and Swift toolchains must be installed.
+The terminal running the agent needs macOS Accessibility and Screen Recording permission (System Settings → Privacy & Security). `doctor` fails loudly when either is missing. While the screen is locked, macOS degrades AX for every client: each app reports itself as its own window. Every `makoctl` command except `shot` then exits 8 with `accessibility degraded: the screen is locked`; ask the user to unlock and retry. If it prints the same failure with the screen unlocked, the grant itself went stale; only the user can fix that, by toggling the terminal off and on in Accessibility and restarting it. Stop and ask either way; do not retry in a loop. Rust (`cargo`) and Swift toolchains must be installed. The headed scripts that click (`chrome-headed`, `sidebar-headed`) also need synthetic pointer events to reach Mako, which a remote session such as Jump Desktop does not pass on (keys still arrive): they run `scripts/pointer-check` first, which prints `UNREACHABLE …` and exits 98, and they stop there. Run them at the Mac.
 
 ## Launch
 
@@ -92,12 +92,13 @@ Each lives in `.claude/skills/verify-mako/scripts/` and runs from the repo root 
 | Script | Covers | Needs | Checks |
 | --- | --- | --- | --- |
 | `trails-bg` | links nest, in-place navigation, restart restore and lazy loading, external links and the trail cap, blocked links (under a config with unusable lines), form submits, trail colours, site icons, file links | nothing: no focus, no permissions | 25 |
-| `trails-ax` | sidebar rows, collapse, Trails menu and ⌘1…⌘9 items, sidebar width, Settings, omnibox, trail cap and 🧠 note, live config edits, close (menu and row ×), Undo Close across a restart, moves (roots too), rename, find, row controls painted only on hover, the omnibox scrim and error-only status, deep rows at the narrowest sidebar | Accessibility | 74 |
+| `trails-ax` | sidebar rows, collapse, Trails menu and ⌘1…⌘9 items, sidebar width, Settings, omnibox, trail cap and 🧠 note, live config edits, close (menu and row ×), Undo Close across a restart, moves (roots too, a page taking its trail's root), rename, find, row controls painted only on hover, the omnibox scrim, error-only status, ring colour per trail and find placeholder, deep rows at the narrowest sidebar | Accessibility | 83 |
 | `dialogs-bg` | `alert()`, `confirm()`, `prompt()` wait for the person | nothing | 3 |
 | `dialogs-ax` | answering dialogs, silencing, which navigations lift it | Accessibility | 17 |
 | `isolation-ax` | a run's website data is invisible to another run; the daily Mako's data is untouched | Accessibility | 4 (the last is `SKIP` while the daily Mako runs) |
 | `ux-headed` | middle-clicks on page content and sidebar rows, ⌘1 as a key, the omnibox with a long address, which icon each row shows | focus, Accessibility, Screen Recording | 24 |
-| `sidebar-headed` | row × and toggle under a real pointer, dragging a root (one row down, above the first card), a click on the page or a row closing the omnibox | focus, Accessibility, Screen Recording | 14 |
+| `sidebar-headed` | row × and toggle under a real pointer, dragging a root (one row down, above the first card), a page dropped above its own root taking it, a click on the page or a row closing the omnibox | focus, Accessibility, Screen Recording, pointer events (`pointer-check`) | 15 |
+| `pointer-check` | that a synthetic click lands in Mako; exits 98 with `UNREACHABLE …` when it does not (remote sessions) | focus | 1 |
 | `settings-headed` | ⌘., stepper clicks, typed values, ⌘W | focus, Accessibility, Screen Recording | 12 |
 | `perf` | performance budgets (below) | Accessibility; focus unless `MAKO_BACKGROUND=1` | 8 budgets (6 and a `SKIP` in the background) |
 | `ab <base> <candidate> [rounds]` | paired A/B of in-app latency between two built checkouts | focus, Accessibility | – |

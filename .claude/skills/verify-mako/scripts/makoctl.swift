@@ -71,7 +71,9 @@ func menuItem(_ app: AXUIElement, _ menu: String, _ item: String) -> AXUIElement
 }
 
 let keyCodes: [String: CGKeyCode] = [
-    "return": 36, "escape": 53, "tab": 48, "f": 3, "g": 5, "t": 17, "w": 13, "l": 37, "r": 15, "z": 6, "c": 8, "a": 0, "v": 9, "x": 7, "[": 33, "]": 30,
+    "return": 36, "escape": 53, "tab": 48, "[": 33, "]": 30,
+    "a": 0, "s": 1, "d": 2, "f": 3, "h": 4, "g": 5, "z": 6, "x": 7, "c": 8, "v": 9, "b": 11, "q": 12, "w": 13, "e": 14, "r": 15,
+    "y": 16, "t": 17, "o": 31, "u": 32, "i": 34, "p": 35, "l": 37, "j": 38, "k": 40, "n": 45, "m": 46,
     "1": 18, "2": 19, "3": 20, "4": 21, "5": 23, "6": 22, "7": 26, "8": 28, "9": 25, "=": 24, "-": 27, "0": 29, ",": 43, ".": 47,
 ]
 
@@ -145,6 +147,8 @@ func failIfDegraded() {
 }
 if args[1] != "shot" { failIfDegraded() }
 
+/// The largest standard window, as `shot` picks: Settings is a standard window too, and
+/// while it is open it can come first in AXWindows.
 func mainWindow() -> AXUIElement {
     func area(_ w: AXUIElement) -> Double {
         var size = CGSize.zero
@@ -153,8 +157,6 @@ func mainWindow() -> AXUIElement {
     }
     guard let window = (attr(app, kAXWindowsAttribute) as? [AXUIElement])?
         .filter({ str($0, kAXSubroleAttribute) == kAXStandardWindowSubrole }).max(by: { area($0) < area($1) })
-/// The largest standard window, as `shot` picks: Settings is a standard window too, and
-/// while it is open it can come first in AXWindows.
     else {
         // The screen can lock while wait-title or time-key polls.
         failIfDegraded()

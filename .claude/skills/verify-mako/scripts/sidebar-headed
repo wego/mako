@@ -2,7 +2,8 @@
 # Sidebar rows and the omnibox with a real pointer: hovering a row shows its close and
 # collapse controls and leaving hides them; clicking the close control closes the page;
 # dragging a root one row down swaps it with its first page; dragging a root into the
-# paper above the first card reorders the trails; with the omnibox open, a click on the
+# paper above the first card reorders the trails; a page dropped on the top edge of its
+# own trail's root row becomes the root; with the omnibox open, a click on the
 # page or the sidebar closes it without acting, and switching apps leaves it open.
 # Headed: takes focus and moves the pointer. Warn the person first. Exit status = failures.
 set -u
@@ -42,6 +43,7 @@ trap '$C stop >/dev/null 2>&1; kill $srv 2>/dev/null; wait $srv 2>/dev/null' EXI
 
 $C stop >/dev/null 2>&1
 [ "${MAKO_SKIP_BUILD:-}" = 1 ] || $C build >/dev/null || { echo "FAIL build"; exit 99; }
+.claude/skills/verify-mako/scripts/pointer-check || exit $?
 mkdir -p "$E"
 port=$((20000 + RANDOM % 20000))
 python3 -m http.server "$port" --bind 127.0.0.1 -d .claude/skills/verify-mako/fixtures/trails >/dev/null 2>&1 &
@@ -79,6 +81,11 @@ read -r _ cy _ _ <<<"$($M "$P" frame mako.trail.2)"
 set -- $(at mako.trail.4 40 50)
 $M "$P" drag "$1" "$2" 0 $((cy - wy - 8 - $2)); sleep 0.6
 check root-dropped-above-first-card-reorders-trails is 's["roots"]' "[4, 2]"
+read -r _ ry _ _ <<<"$($M "$P" frame mako.trail.2)"
+# shellcheck disable=SC2046
+set -- $(at mako.trail.3 40 50)
+$M "$P" drag "$1" "$2" 0 $((ry - wy + 2 - $2)); sleep 0.6
+check page-dropped-above-its-root-becomes-root is '(s["roots"], n["3"]["children"], s["colors"]["3"])' "([4, 3], [2], 0)"
 
 echo "== omnibox closes on a click outside it"
 $M "$P" menu Trails "Page B"; sleep 0.4
