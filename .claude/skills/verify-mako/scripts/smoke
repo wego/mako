@@ -1,7 +1,7 @@
 #!/bin/bash
-# The full pass: builds once, then runs every check script and perf in turn. The
-# background scripts and perf take no focus. SMOKE_HEADED=1 adds ux-headed and
-# settings-headed, which take the keyboard and pointer, and lets perf time real ⌘T
+# The full pass: the core's tests, then builds once and runs every check script and perf
+# in turn. The background scripts and perf take no focus. SMOKE_HEADED=1 adds the headed
+# scripts (ux, settings, chrome, sidebar, omnibox-keys), which take the keyboard and pointer, and lets perf time real ⌘T
 # and ⌘1 presses. Prints each script's PASS/FAIL lines, then one SUMMARY line per
 # script. Exit status is the total number of failures (capped at 255).
 set -u
@@ -25,12 +25,15 @@ step() {
 }
 
 step doc-check
+# The core's tests run in CI too; here they also gate the rest of the local pass.
+echo "== cargo test"
+cargo test -q --manifest-path core/Cargo.toml || { summary+=("SUMMARY cargo test failed"); fails=$((fails + 1)); }
 "$S/control-mako" build >/dev/null || { echo "FAIL build"; exit 99; }
 export MAKO_SKIP_BUILD=1
 
-for name in trails-bg trails-ax dialogs-bg dialogs-ax isolation-ax; do step "$name"; done
+for name in trails-bg trails-ax chrome-ax dialogs-bg dialogs-ax isolation-ax; do step "$name"; done
 if [ "${SMOKE_HEADED:-}" = 1 ]; then
-  for name in ux-headed settings-headed; do step "$name"; done
+  for name in ux-headed settings-headed chrome-headed sidebar-headed omnibox-keys-headed; do step "$name"; done
   MAKO_BACKGROUND= step perf
 else
   echo "== skipping ux-headed and settings-headed (they take the keyboard and pointer; SMOKE_HEADED=1 runs them)"
