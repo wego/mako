@@ -16,6 +16,7 @@ Swift/AppKit shell over WKWebView; policy and omnibox logic in a small Rust core
 | ⌘T | New trail (refused at the cap; default 3, set in Settings) |
 | ⌥⌘T | New page beneath the current one |
 | ⌘L | Omnibox: load an address in the current page (one line; long addresses shrink to fit) |
+| ↓ / ↑, Return | In the omnibox: select a suggestion (an open page or one from history) and go to it; Return with none selected loads what you typed |
 | ⌘W / ⇧⌘T | Close page (with the pages beneath it) / reopen closed page |
 | ⌃Tab / ⌃⇧Tab | Next / previous page in the sidebar |
 | ⌘1…⌘9 | Go to that trail's first page; again, to its last page, and back |
@@ -27,6 +28,8 @@ Swift/AppKit shell over WKWebView; policy and omnibox logic in a small Rust core
 | ⌘, | Edit config |
 
 Clicking a link opens it as a new page beneath the current one; ⌘-click or middle-click opens it there without leaving the page you are on. A middle-click on anything else is a click whose navigation, if it starts one, opens in the background too. Middle-click a page in the sidebar to close it. Drag a page in the sidebar onto another to move it (with everything beneath it) before, after or inside that page, or use Trails → Move Page Up / Down, Indent, Outdent. At the trail cap a quiet 🧠 count sits at the foot of the sidebar. Each page shows its site's icon. Each trail is a card raised off the sidebar's paper, tinted in its own colour (the first green, the second blue, the third pink), with a dot on its first page and ink branches down to the pages beneath; the colour also marks its Trails menu item and stays while other trails close or move. Double-click a page to rename it. Drag the sidebar's edge to resize it. Files a page cannot show are saved to Downloads. Typing an address with ⌘L, submitting a form, or a redirect changes the current page in place. Only recently shown pages stay loaded; the rest reload when selected. Trails are saved after every change in `trails.json` beside the config.
+
+As you type in the omnibox (⌘L, ⌘T, ⌥⌘T) it suggests up to eight pages: ones already open in a trail first, marked with their trail's dot and Open, then pages from your history, ranked by how well they match and how often and how recently you visited them. Picking an open page takes you to it instead of loading it twice; picking a history page loads it where the same address typed would go. Nothing is filled in for you, and no suggestion comes from the network. History is kept in `history.json` beside the config and never leaves the Mac; History → Clear History… empties it, and `remember_history = false` keeps none.
 
 Mako's own shortcuts (⌘T ⌥⌘T ⇧⌘T ⌘W ⌘L ⌘1…⌘9 ⌘. ⌘, ⌥⌘C ⌃Tab) win over pages; every other shortcut goes to the page first, so web editors keep ⌘Z.
 
@@ -68,6 +71,7 @@ The `verify-mako` skill (`.claude/skills/verify-mako/`) launches an isolated ins
 
     max_trails = 3                         # trails (top-level pages), 1–9; pages within a trail are unlimited
     restore_session = true                 # keep trails (and Undo Close) across restarts (default)
+    remember_history = true                # record visited pages for omnibox suggestions (default); false keeps none
     search = https://duckduckgo.com/?q=%s
     block x.com                            # always, includes subdomains and embeds (iframes)
     block youtube.com 09:00-18:00 weekdays # days: mon-fri, sat,sun, weekends, daily

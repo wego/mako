@@ -31,7 +31,7 @@ cargo test -q --manifest-path core/Cargo.toml || { summary+=("SUMMARY cargo test
 "$S/control-mako" build >/dev/null || { echo "FAIL build"; exit 99; }
 export MAKO_SKIP_BUILD=1
 
-for name in trails-bg trails-ax chrome-ax dialogs-bg dialogs-ax isolation-ax; do step "$name"; done
+for name in trails-bg trails-ax chrome-ax dialogs-bg dialogs-ax omnibox-ax isolation-ax; do step "$name"; done
 if [ "${SMOKE_HEADED:-}" = 1 ]; then
   for name in ux-headed settings-headed chrome-headed sidebar-headed omnibox-keys-headed; do step "$name"; done
   MAKO_BACKGROUND= step perf

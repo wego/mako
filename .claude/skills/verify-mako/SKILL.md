@@ -1,6 +1,6 @@
 ---
 name: verify-mako
-description: Drive the Mako macOS browser (Swift/AppKit + WKWebView, Rust core) the way a user does and capture proof. Use after any change to app/ or core/, before claiming a Mako feature works, or when asked to verify, screenshot, or test Mako's UI, trails and sidebar, shortcuts, omnibox, settings, blocklist, page dialogs, or accessibility tree.
+description: Drive the Mako macOS browser (Swift/AppKit + WKWebView, Rust core) the way a user does and capture proof. Use after any change to app/ or core/, before claiming a Mako feature works, or when asked to verify, screenshot, or test Mako's UI, trails and sidebar, shortcuts, omnibox and its suggestions, history, settings, blocklist, page dialogs, or accessibility tree.
 ---
 
 # Verify Mako
@@ -64,7 +64,7 @@ Full command reference, exit codes, AX handles, and recipes: `docs/control.md`. 
 | `shot <path>` | window screenshot (works even when other windows cover it) |
 | `pointer-center` | parks the pointer over the page, for perf runs |
 
-Stable AX handles (full table in `docs/control.md`): `mako.sidebar` (the trails list), `mako.trail.<id>` (a sidebar row; `id` is the page's permanent id from `trails.json`, value `selected` on the active page), `mako.trail.<id>.toggle` (collapse control), `mako.trail.<id>.close` (the row's ×; both painted only on hover, always in the tree), `mako.trail.<id>.name` (rename field), `mako.trail.<id>.page` (a loaded page's web view), `mako.sidebar.load` (the `🧠 n/max` note, present only at the trail cap), `mako.sidebar.config` (the `⚠ config line …` note, present only while a config line is unusable), `mako.sidebar.toggle` (the corner icon that hides the sidebar), `mako.divider` (sidebar width), `mako.page` (web container), `mako.omnibox`, `mako.omnibox.field`, `mako.omnibox.status` (only with an error or message), `mako.omnibox.scrim` (press to close the omnibox), `mako.blank` (shown with no page), `mako.popup`, `mako.dialog.ok` / `.cancel` / `.field` / `.silence`, `mako.settings.maxTrails` and `.stepper`. The `Trails` menu has Next Page, Previous Page, the move items and Rename Page…, then one item per visible page, indented by depth, the active one checked; a trail's root item carries ⌘1…⌘9.
+Stable AX handles (full table in `docs/control.md`): `mako.sidebar` (the trails list), `mako.trail.<id>` (a sidebar row; `id` is the page's permanent id from `trails.json`, value `selected` on the active page), `mako.trail.<id>.toggle` (collapse control), `mako.trail.<id>.close` (the row's ×; both painted only on hover, always in the tree), `mako.trail.<id>.name` (rename field), `mako.trail.<id>.page` (a loaded page's web view), `mako.sidebar.load` (the `🧠 n/max` note, present only at the trail cap), `mako.sidebar.config` (the `⚠ config line …` note, present only while a config line is unusable), `mako.sidebar.toggle` (the corner icon that hides the sidebar), `mako.divider` (sidebar width), `mako.page` (web container), `mako.omnibox`, `mako.omnibox.field`, `mako.omnibox.suggestion.<n>` (a suggestion row, 0-based in display order; desc `Open page – <url>` or `History – <url>`, value `selected` on the row the arrow keys selected), `mako.omnibox.status` (only with an error or message), `mako.omnibox.scrim` (press to close the omnibox), `mako.blank` (shown with no page), `mako.popup`, `mako.dialog.ok` / `.cancel` / `.field` / `.silence`, `mako.settings.maxTrails` and `.stepper`. The `Trails` menu has Next Page, Previous Page, the move items and Rename Page…, then one item per visible page, indented by depth, the active one checked; a trail's root item carries ⌘1…⌘9.
 
 ## Evidence
 
@@ -72,6 +72,7 @@ Write artifacts to `$MAKO_RUN/evidence/` (default `verify-runs/latest/evidence/`
 
 - Drive the real user path: menus, shortcuts, typing, clicks, or the AX actions assistive tech uses (`press`, `set`, `confirm`). No internal setters.
 - Capture the action and the resulting state: a `tree`, `title`, `value` or `trails.json` read after each step, plus a `shot` for anything visual.
+- `state/history.json` holds every recorded visit (`url`, `title`, `visits`, `last_visit`), rewritten on each one.
 - `state/trails.json` is the core's whole state, rewritten after every change: the most direct proof of the tree, the active page, the Undo Close stack and trail colours.
 - For the blocklist, prove both sides: a blocked host shows the block notice and an unblocked host loads.
 - `log stream --level info --predicate 'subsystem == "com.wego.mako"'` shows Mako's decisions (`allow`, `block`, `child of`, `loaded page`, `popup`, `favicon`, `dialog … dismissed`, `download to`, `trails <action> refused`); capture it alongside UI evidence for navigation proofs. Start it before the action.
@@ -95,9 +96,10 @@ Each lives in `.claude/skills/verify-mako/scripts/` and runs from the repo root 
 | `trails-ax` | sidebar rows, collapse, Trails menu and ⌘1…⌘9 items, sidebar width, Settings, omnibox, trail cap and 🧠 note, live config edits, close (menu and row ×), Undo Close across a restart, moves (roots too, a page taking its trail's root), rename, find, row controls painted only on hover, the omnibox scrim, error-only status, ring colour per trail and find placeholder, deep rows at the narrowest sidebar | Accessibility | 83 |
 | `dialogs-bg` | `alert()`, `confirm()`, `prompt()` wait for the person | nothing | 3 |
 | `dialogs-ax` | answering dialogs, silencing, which navigations lift it | Accessibility | 17 |
+| `omnibox-ax` | address bar suggestions: visits recorded in `history.json`, open pages before history, picking an open page or a history row per mode, no rows when empty or in find, relaunch, a page inside a collapsed one, `remember_history = false`, Clear History… | Accessibility | 34 |
 | `isolation-ax` | a run's website data is invisible to another run; the daily Mako's data is untouched | Accessibility | 4 (the last is `SKIP` while the daily Mako runs) |
 | `ux-headed` | middle-clicks on page content and sidebar rows, ⌘1 as a key, the omnibox with a long address, which icon each row shows | focus, Accessibility, Screen Recording | 24 |
-| `omnibox-keys-headed` | Return in ⌘L loads into the page; Option-Return opens beside it (a new trail after a root, a sibling after a page) with no newline in the field | focus, Accessibility (keys only, so it also runs over Jump Desktop) | 6 |
+| `omnibox-keys-headed` | Return in ⌘L loads into the page; Option-Return opens beside it (a new trail after a root, a sibling after a page) with no newline in the field; ↓/↑ select a suggestion, Return picks it, Escape closes | focus, Accessibility (keys only, so it also runs over Jump Desktop) | 19 |
 | `sidebar-headed` | row × and toggle under a real pointer, dragging a root (one row down, above the first card), a page dropped above its own root taking it, a click on the page or a row closing the omnibox | focus, Accessibility, Screen Recording, pointer events (`pointer-check`) | 15 |
 | `pointer-check` | that a synthetic click lands in Mako; exits 98 with `UNREACHABLE …` when it does not (remote sessions) | focus | 1 |
 | `settings-headed` | ⌘., stepper clicks, typed values, ⌘W | focus, Accessibility, Screen Recording | 12 |
@@ -116,7 +118,7 @@ The background scripts are safe while the person uses the Mac; run `trails-bg` a
 SMOKE_HEADED=1 .claude/skills/verify-mako/scripts/smoke   # adds ux-headed, settings-headed and perf's key timings
 ```
 
-Runs `doc-check`, builds once, then `trails-bg`, `trails-ax`, `dialogs-bg`, `dialogs-ax`, `isolation-ax`, the two headed scripts when `SMOKE_HEADED=1`, and `perf`. It prints every script's lines, then one `SUMMARY <script> <n> failure(s)` line each; exit status is the total. Evidence stays in `verify-runs/<script>/evidence/` (perf: `verify-runs/latest/evidence/`). Run it before claiming any Mako change works. The feature recipes in `features/` cover more than the scripts do; drive the matching recipe by hand for any feature a change touches, and a single recipe step when debugging one failure.
+Runs `doc-check`, builds once, then `trails-bg`, `trails-ax`, `chrome-ax`, `dialogs-bg`, `dialogs-ax`, `omnibox-ax`, `isolation-ax`, the two headed scripts when `SMOKE_HEADED=1`, and `perf`. It prints every script's lines, then one `SUMMARY <script> <n> failure(s)` line each; exit status is the total. Evidence stays in `verify-runs/<script>/evidence/` (perf: `verify-runs/latest/evidence/`). Run it before claiming any Mako change works. The feature recipes in `features/` cover more than the scripts do; drive the matching recipe by hand for any feature a change touches, and a single recipe step when debugging one failure.
 
 ## Performance budgets
 

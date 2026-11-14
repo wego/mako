@@ -1,7 +1,10 @@
 #!/bin/bash
 # The address bar with real keys: Return loads into this page; Option-Return opens the
 # address beside it (a sibling under the same parent, or a new trail right after a root)
-# and selects it; neither leaves a newline in the field.
+# and selects it; neither leaves a newline in the field. Then the suggestions: ↓ and ↑ move
+# the selection through the rows and back to none, Return picks the selected row (an open
+# page is shown, a history row loads), Return with none selected loads what was typed, and
+# Escape closes the list with the omnibox.
 # Still pages (fixtures/omnibox), so no page opens pages of its own.
 # Headed: takes keyboard focus, but sends no pointer events, so it also runs over a remote
 # session such as Jump Desktop. Warn the person first. Exit status = failures.
@@ -17,6 +20,7 @@ fail() { echo "FAIL $1 ($(q '(s["roots"], s["active"], {k: v["children"] for k, 
 check() { local name=$1; shift; if "$@" >/dev/null 2>&1; then pass "$name"; else fail "$name"; fi; }
 q() { python3 -c "import json; s=json.load(open('$J')); n=s['nodes']; print($1)"; }
 is() { test "$(q "$1")" = "$2"; }
+is_field() { test "$($M "$P" value mako.omnibox.field)" = "$1"; }
 within() { for _ in $(seq 30); do "$@" >/dev/null 2>&1 && return 0; sleep 0.1; done; return 1; }
 # go <keys> <address>: ⌘L, type the address, then press <keys> (return or opt+return)
 go() { $M "$P" key cmd+l; sleep 0.3; $M "$P" type "$2"; $M "$P" key "$1"; sleep 1; }
@@ -47,6 +51,38 @@ $M "$P" set mako.omnibox.field "$U/four.html"; $M "$P" confirm mako.omnibox.fiel
 go opt+return "$U/five.html"
 check opt-return-on-page-opens-sibling-after-it within is '(n["2"]["children"], s["active"], n["4"]["parent"])' "([3, 4], 4, 2)"
 check no-newline-in-the-address is '"\n" in n["4"]["url"]' False
+
+echo "== arrows select a suggestion, Return picks it"
+selected() { test "$($M "$P" value "mako.omnibox.suggestion.$1")" = selected; }
+none_selected() { ! $M "$P" tree | grep -q 'mako.omnibox.suggestion.*value="selected"'; }
+before=$(q 'len(n)')
+$M "$P" key cmd+t; sleep 0.3; $M "$P" type "two"; sleep 0.4
+check typing-lists-the-open-page sh -c "$M $P tree | grep 'id=\"mako.omnibox.suggestion.0\".*desc=\"Open page – .*two.html\"'"
+check nothing-selected-while-typing none_selected
+$M "$P" key down; sleep 0.2
+check down-selects-the-first-row selected 0
+$M "$P" key down; sleep 0.2
+check down-past-the-last-row-selects-none none_selected
+$M "$P" key up; sleep 0.2
+check up-from-none-selects-the-last-row selected 0
+check arrows-leave-the-typed-text is_field two
+$M "$P" key return; sleep 0.6
+check return-on-an-open-row-shows-that-page within is "(s[\"active\"], len(n))" "(1, $before)"
+
+$M "$P" key cmd+t; sleep 0.3; $M "$P" type "one"; sleep 0.4
+check typing-lists-history sh -c "$M $P tree | grep 'id=\"mako.omnibox.suggestion.0\".*desc=\"History – .*one.html\"'"
+$M "$P" key down; sleep 0.2; $M "$P" key return; sleep 1
+check return-on-a-history-row-opens-it-in-a-new-trail within is "(len(s[\"roots\"]), n[str(s[\"active\"])][\"url\"].endswith(\"/one.html\"))" "(3, True)"
+
+go return "$U/five.html?typed"
+check return-with-no-row-selected-loads-what-was-typed within is 'n[str(s["active"])]["url"].endswith("/five.html?typed")' True
+
+echo "== Escape"
+$M "$P" key cmd+l; sleep 0.3; $M "$P" type "page"; sleep 0.4
+check rows-listed-before-escape $M "$P" exists mako.omnibox.suggestion.0
+$M "$P" key down; sleep 0.2; $M "$P" key escape; sleep 0.4
+check escape-closes-the-omnibox-and-its-rows sh -c "$M $P exists mako.omnibox; test \$? = 4"
+check escape-loads-nothing is 'n[str(s["active"])]["url"].endswith("/five.html?typed")' True
 
 echo "omnibox-keys-headed: $fails failed"
 exit "$fails"
