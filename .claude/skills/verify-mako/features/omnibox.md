@@ -5,7 +5,8 @@ The address bar is a raised card over the page, drawn like the sidebar's cards: 
 ## Sub-features
 
 - `omni-open` ⌘L opens prefilled with the shown page's address (http, https, data or file), text selected; empty when no page is shown or it shows a notice.
-- `omni-purpose` the field's accessibility label names what Enter does: `This page – search or enter address` (⌘L), `New trail – search or enter address` (⌘T, or ⌘L with no page open), `New page beneath this one – search or enter address` (⌥⌘T), `Find in this page` (⌘F). On screen the colour and the glyph before the field say it (`omni-look`); the placeholder is `Search or enter address`, and `Find in page` for find. `makoctl tree` shows it as `placeholder=`.
+- `omni-purpose` the field's accessibility label names what Enter does: `This page – search or enter address; Option-Return opens it beside this page` (⌘L), `New trail – search or enter address` (⌘T, or ⌘L with no page open), `New page beneath this one – search or enter address` (⌥⌘T), `Find in this page` (⌘F). On screen the colour and the glyph before the field say it (`omni-look`); the placeholder is `Search or enter address`, and `Find in page` for find. `makoctl tree` shows it as `placeholder=`.
+- `omni-beside` in ⌘L with a page shown, Option-Return opens the address in a new page right after this one, under the same parent, and selects it; this page keeps its address. Beside a trail's root that is a new trail right after it, so the trail cap applies (`Can’t open: trail cap reached (N)`). Option-Return never puts a newline in the field. Other modes treat it as Return. `scripts/omnibox-keys-headed` checks it with real keys.
 - `omni-url` input containing `://`, or starting `about:` or `data:`, loads as typed. A bare domain (a letters-only top-level domain of two or more), `localhost` or an IPv4 address, with an optional port and path, gets `https://`, or `http://` when it starts with `localhost` or `127.`.
 - `omni-search` anything else goes to the config's `search =` engine (default Google).
 - `omni-status` the line under the field (`mako.omnibox.status`, terracotta) shows only an error or a message: the cap refusal, `Not found` from find (cleared by the next hit), or else a config error. With none it is gone from the panel and the AX tree. Opening the omnibox again drops the last message.
@@ -28,7 +29,7 @@ The address bar is a raised card over the page, drawn like the sidebar's cards: 
 
 Preconditions: baseline, launched with `$C launch "" https://example.com`; `MAKO_BACKGROUND=1` is fine except for the steps marked (focus).
 
-- **Open.** `$M $P menu File "Open Location…"`. `$M $P value mako.omnibox.field` prints `https://example.com/`; `$M $P tree | grep mako.omnibox.field` shows `desc="This page – search or enter address"` and `exists mako.omnibox.status` exits 4. **(focus)** `key cmd+l` does the same.
+- **Open.** `$M $P menu File "Open Location…"`. `$M $P value mako.omnibox.field` prints `https://example.com/`; `$M $P tree | grep mako.omnibox.field` shows `desc="This page – search or enter address; Option-Return opens it beside this page"` and `exists mako.omnibox.status` exits 4. **(focus)** `key cmd+l` does the same.
 - **Purposes.** `menu File "New Trail"`, `menu File "New Page in Trail"` and `menu Edit "Find…"` each put their purpose (above) in `mako.omnibox.field`'s `desc`, and none shows `mako.omnibox.status`.
 - **Bare domain.** `menu File "Open Location…"; set mako.omnibox.field iana.org; confirm mako.omnibox.field`. `wait-title "Internet Assigned" 8` succeeds and `trails.json` still holds one page.
 - **Local address.** With `fixture-server $PORT` running, the same with `127.0.0.1:$PORT/c.html`: `wait-title "Page C"`, and the page's `url` in `trails.json` starts `http://`.

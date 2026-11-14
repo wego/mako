@@ -66,6 +66,9 @@ pub enum Action {
     OpenChild { parent: Id, url: String, #[serde(default = "yes")] select: bool },
     /// The page in this node changed address or title in place (redirect, in-page navigation).
     Navigated { id: Id, url: String, title: String },
+    /// ⌥Enter in the address bar: a new page right after `of`, under the same parent. A root's
+    /// sibling is a new trail right after its trail.
+    OpenSibling { of: Id, url: String },
     Select { id: Id },
     /// Close a page and everything beneath it.
     Close { id: Id },
@@ -160,6 +163,19 @@ pub fn apply(state: &Trails, action: &Action, max_trails: usize) -> Result<Trail
             } else {
                 s.active = was_active;
             }
+        }
+        Action::OpenSibling { of, url } => {
+            let parent = s.nodes.get(of).ok_or(Error::NoSuchPage(*of))?.parent;
+            if parent.is_none() && s.roots.len() >= max_trails {
+                return Err(Error::TrailCap(max_trails));
+            }
+            let id = add(&mut s, parent, url);
+            let siblings = match parent {
+                Some(p) => &mut s.nodes.get_mut(&p).unwrap().children,
+                None => &mut s.roots,
+            };
+            let at = siblings.iter().position(|c| c == of).unwrap() + 1;
+            siblings.insert(at, id);
         }
         Action::Navigated { id, url, title } => {
             let n = s.nodes.get_mut(id).ok_or(Error::NoSuchPage(*id))?;
@@ -469,6 +485,26 @@ mod tests {
     /// a(1) > [b(2) > [d(4)], c(3)], e(5)
     fn sample() -> Trails {
         run(&Trails::default(), &[trail("a"), child(1, "b"), child(1, "c"), child(2, "d"), trail("e")])
+    }
+
+    fn sibling(of: Id, url: &str) -> Action { Action::OpenSibling { of, url: url.into() } }
+
+    #[test]
+    fn a_sibling_opens_right_after_its_page_under_the_same_parent() {
+        let s = run(&sample(), &[sibling(2, "x")]);
+        assert_eq!(shape(&s), [(0, "a".into()), (1, "b".into()), (2, "d".into()), (1, "x".into()), (1, "c".into()), (0, "e".into())]);
+        assert_eq!(s.nodes[&6].parent, Some(1));
+        assert_eq!(s.active, Some(6), "the new page is selected");
+    }
+
+    #[test]
+    fn a_roots_sibling_is_a_new_trail_right_after_it() {
+        let s = apply(&sample(), &sibling(1, "x"), 3).unwrap();
+        assert_eq!(s.roots, [1, 6, 5]);
+        assert_eq!(s.active, Some(6));
+        assert!(s.colors.contains_key(&6), "a new trail gets its colour");
+        assert_eq!(apply(&sample(), &sibling(1, "x"), 2), Err(Error::TrailCap(2)));
+        assert_eq!(apply(&sample(), &sibling(9, "x"), 3), Err(Error::NoSuchPage(9)));
     }
 
     #[test]

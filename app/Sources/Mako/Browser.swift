@@ -556,7 +556,7 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         omniTarget = target
         field.stringValue = text ?? ""
         let purpose = switch target {
-        case .current: store.active == nil ? "New trail – search or enter address" : "This page – search or enter address"
+        case .current: store.active == nil ? "New trail – search or enter address" : "This page – search or enter address; Option-Return opens it beside this page"
         case .newTrail: "New trail – search or enter address"
         case .child: "New page beneath this one – search or enter address"
         case .find: "Find in this page"
@@ -611,19 +611,32 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
     }
 
     func control(_ control: NSControl, textView: NSTextView, doCommandBy sel: Selector) -> Bool {
-        guard sel == #selector(NSResponder.cancelOperation(_:)) else { return false }
-        hideOmnibox()
+        switch sel {
+        case #selector(NSResponder.cancelOperation(_:)): hideOmnibox()
+        // ⌥Return, which a field would otherwise take as a literal newline.
+        case #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)): enter(beside: true)
+        default: return false
+        }
         return true
     }
 
-    @objc func omniboxEntered(_: Any?) {
+    @objc func omniboxEntered(_: Any?) { enter(beside: false) }
+
+    /// `beside`: an address for this page opens in a new page next to it instead of replacing it.
+    private func enter(beside: Bool) {
         guard omniboxOpen else { return }
         if case .find = omniTarget { return findNext(nil) }
         guard let url = Core.resolve(field.stringValue) else { return hideOmnibox() }
         var error: String?
         switch omniTarget {
         case .current:
-            if shown != nil { userLoad { $0.load(URLRequest(url: url)) } } else { error = store.apply("open_trail", ["url": url.absoluteString]) }
+            if beside, let active = store.active {
+                error = store.apply("open_sibling", ["of": active.id, "url": url.absoluteString])
+            } else if shown != nil {
+                userLoad { $0.load(URLRequest(url: url)) }
+            } else {
+                error = store.apply("open_trail", ["url": url.absoluteString])
+            }
         case .newTrail:
             error = store.apply("open_trail", ["url": url.absoluteString])
         case .child(let parent):

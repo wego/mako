@@ -97,6 +97,7 @@ Each lives in `.claude/skills/verify-mako/scripts/` and runs from the repo root 
 | `dialogs-ax` | answering dialogs, silencing, which navigations lift it | Accessibility | 17 |
 | `isolation-ax` | a run's website data is invisible to another run; the daily Mako's data is untouched | Accessibility | 4 (the last is `SKIP` while the daily Mako runs) |
 | `ux-headed` | middle-clicks on page content and sidebar rows, ⌘1 as a key, the omnibox with a long address, which icon each row shows | focus, Accessibility, Screen Recording | 24 |
+| `omnibox-keys-headed` | Return in ⌘L loads into the page; Option-Return opens beside it (a new trail after a root, a sibling after a page) with no newline in the field | focus, Accessibility (keys only, so it also runs over Jump Desktop) | 6 |
 | `sidebar-headed` | row × and toggle under a real pointer, dragging a root (one row down, above the first card), a page dropped above its own root taking it, a click on the page or a row closing the omnibox | focus, Accessibility, Screen Recording, pointer events (`pointer-check`) | 15 |
 | `pointer-check` | that a synthetic click lands in Mako; exits 98 with `UNREACHABLE …` when it does not (remote sessions) | focus | 1 |
 | `settings-headed` | ⌘., stepper clicks, typed values, ⌘W | focus, Accessibility, Screen Recording | 12 |
