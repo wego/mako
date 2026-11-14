@@ -204,7 +204,7 @@ final class Sidebar: NSView {
     /// dropped there reorders the trails.
     private func gap(at point: NSPoint) -> (root: UInt64, place: DropPlace, lineY: CGFloat)? {
         let cards = stack.arrangedSubviews.compactMap { $0 as? CardView }.map { ($0.root, convert($0.bounds, from: $0)) }
-        guard !cards.contains(where: { $0.1.contains(point) }), let last = cards.last else { return nil }
+        guard scroll.frame.contains(point), !cards.contains(where: { $0.1.contains(point) }), let last = cards.last else { return nil }
         if let below = cards.first(where: { point.y > $0.1.midY }) { return (below.0, .before, below.1.maxY + stack.spacing / 2) }
         return (last.0, .after, last.1.minY - stack.spacing / 2)
     }
