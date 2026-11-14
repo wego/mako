@@ -31,10 +31,7 @@ jobs:
         run: script/bundle
 
       - name: Compile the verification harness
-        # Reuses the SDK modules the app build just compiled; most of a cold compile is those.
-        run: |
-          swiftc -O -module-cache-path "$(swift build -c release --show-bin-path)/ModuleCache" \
-            .claude/skills/verify-mako/scripts/makoctl.swift -o "$RUNNER_TEMP/makoctl"
+        run: swiftc -O .claude/skills/verify-mako/scripts/makoctl.swift -o "$RUNNER_TEMP/makoctl"
 
       - name: Control docs cover every command
         run: .claude/skills/verify-mako/scripts/doc-check
