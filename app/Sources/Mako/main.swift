@@ -86,6 +86,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 item("Zoom Out", #selector(Browser.zoomOut), "-"),
                 item("Actual Size", #selector(Browser.zoomReset), "0"),
                 .separator(),
+                item(browser.sidebarMenuTitle, #selector(Browser.toggleSidebar), "s", [.command, .control]),
+                .separator(),
                 item("Developer Console", #selector(Browser.toggleConsole), "c", [.command, .option]),
                 item("Enter Full Screen", #selector(NSWindow.toggleFullScreen), "f", [.command, .control]),
             ]),

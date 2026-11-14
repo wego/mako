@@ -29,6 +29,7 @@ Each file: H1 title, one paragraph of user-visible behavior, then `Sub-features`
 
 ## Features
 
+- [Window](./window.md) covers the chromeless window: the traffic lights on the sidebar, moving the window by the sidebar's paper or the top strip, title-bar double-clicks, hiding the sidebar (⌃⌘S) and peeking it from the left edge.
 - [Trails](./trails.md) covers the sidebar's trees of pages: links opening child pages, the trail cap, select, ⌘1…⌘9 jumps, close, Undo Close, collapse, moves, rename, middle-clicks, colours, site icons, width, find, downloads.
 - [Omnibox](./omnibox.md) covers address entry, search, what Enter does for ⌘L, ⌘T, ⌥⌘T and ⌘F, the status line, and dismissal.
 - [Settings](./settings.md) covers the ⌘. window and its trail cap.

@@ -1,0 +1,75 @@
+#!/bin/bash
+# The chromeless window through accessibility, without focus: the page and sidebar reach
+# the window's top edge, the first card clears the traffic lights, View → Hide Sidebar
+# leaves only the page (and survives a restart), Show Sidebar brings it back.
+# Needs Accessibility permission; no keys or clicks are sent. Prints PASS/FAIL per check;
+# exit status = failures.
+set -u
+cd "$(dirname "$0")/../../../.."
+export MAKO_BACKGROUND=1 MAKO_RUN="$PWD/verify-runs/chrome-ax"
+C=.claude/skills/verify-mako/scripts/control-mako; M=verify-runs/.bin/makoctl
+fails=0; P=
+pass() { echo "PASS $1"; }
+fail() { echo "FAIL $1"; fails=$((fails + 1)); }
+check() { local name=$1; shift; if "$@" >/dev/null 2>&1; then pass "$name"; else fail "$name"; fi; }
+# painted <png>: the fixture's white page shows at 80% across, half-way down the window
+painted() {
+  sips -s format bmp "$1" --out "$1.bmp" >/dev/null 2>&1 && python3 -I -c '
+import struct, sys
+b = open(sys.argv[1], "rb").read()
+off, w, h, bpp = struct.unpack_from("<I", b, 10)[0], *struct.unpack_from("<ii", b, 18), struct.unpack_from("<H", b, 28)[0] // 8
+y = abs(h) // 2; y = h - 1 - y if h > 0 else y
+i = off + y * ((w * bpp + 3) // 4 * 4) + int(w * 0.8) * bpp
+sys.exit(0 if min(b[i:i + 3]) > 240 else 1)' "$1.bmp"
+}
+within() { for _ in $(seq 20); do "$@" >/dev/null 2>&1 && return 0; sleep 0.1; done; return 1; }
+trap '$C stop >/dev/null 2>&1; kill $srv 2>/dev/null; wait $srv 2>/dev/null' EXIT
+
+$C stop >/dev/null 2>&1
+[ "${MAKO_SKIP_BUILD:-}" = 1 ] || $C build >/dev/null || { echo "FAIL build"; exit 99; }
+port=$((20000 + RANDOM % 20000))
+python3 -m http.server "$port" --bind 127.0.0.1 -d .claude/skills/verify-mako/fixtures/chrome >/dev/null 2>&1 &
+srv=$!; sleep 1
+out=$($C launch "" "http://127.0.0.1:$port/top.html" 2>&1) || { echo "FAIL launch: $out"; exit 99; }
+P=$($C pid); sleep 3
+
+echo "== shown"
+read -r wx wy _ _ <<<"$($M "$P" window-frame)"
+read -r sx sy _ _ <<<"$($M "$P" frame mako.sidebar)"
+read -r px py _ _ <<<"$($M "$P" frame mako.page)"
+read -r _ ty _ _ <<<"$($M "$P" frame mako.trail.1)"
+check page-reaches-window-top test "$py" = "$wy"
+check sidebar-reaches-window-top test "$sy" = "$wy"
+check sidebar-at-window-left test "$sx" = "$wx"
+check first-card-clears-traffic-lights test $((ty - wy)) -ge 28
+check traffic-lights-shown sh -c "$M $P tree 3 | grep -q AXCloseButton"
+check title-still-names-window test "$($M "$P" title)" = Top
+check menu-offers-hide sh -c "$M $P menu-items View | grep -qx '  Hide Sidebar'"
+$M "$P" shot "$MAKO_RUN/shown-fresh.png" >/dev/null 2>&1
+check page-painted-beside-sidebar painted "$MAKO_RUN/shown-fresh.png"
+
+echo "== hidden"
+$M "$P" menu View "Hide Sidebar"
+check hide-removes-sidebar within sh -c "! $M $P exists mako.sidebar"
+check hide-removes-divider sh -c "! $M $P exists mako.divider"
+check page-fills-window test "$($M "$P" frame mako.page | cut -d' ' -f1)" = "$wx"
+check traffic-lights-hidden sh -c "! $M $P tree 3 | grep -q AXCloseButton"
+check menu-offers-show sh -c "$M $P menu-items View | grep -qx '  Show Sidebar'"
+check trails-menu-still-navigates sh -c "$M $P menu-items Trails | grep -q 'Top'"
+$M "$P" shot "$MAKO_RUN/hidden.png" >/dev/null 2>&1
+check page-painted-full-width painted "$MAKO_RUN/hidden.png"
+
+echo "== hidden survives a restart"
+$C relaunch >/dev/null 2>&1; P=$($C pid); sleep 3
+check hidden-after-restart sh -c "! $M $P exists mako.sidebar"
+
+echo "== shown again"
+$M "$P" menu View "Show Sidebar"
+check show-restores-sidebar within $M "$P" exists mako.sidebar
+check show-restores-page-beside test "$($M "$P" frame mako.page | cut -d' ' -f1)" -gt "$wx"
+check traffic-lights-back sh -c "$M $P tree 3 | grep -q AXCloseButton"
+$M "$P" shot "$MAKO_RUN/shown.png" >/dev/null 2>&1
+check page-painted-after-restart painted "$MAKO_RUN/shown.png"
+
+echo "chrome-ax: $fails failed"
+exit "$fails"

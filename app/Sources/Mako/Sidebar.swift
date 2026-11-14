@@ -62,6 +62,13 @@ final class Sidebar: NSView {
     var onPlace: (_ page: UInt64, _ target: UInt64, DropPlace) -> Void = { _, _, _ in }
     var iconFor: (TrailRow) -> NSImage? = { _ in nil }
     var onOpenConfig: () -> Void = {}
+    /// The pointer left the sidebar.
+    var onExit: () -> Void = {}
+    /// Peeking over the page: a shadow lifts it off the page beneath.
+    var floats = false { didSet { layer?.shadowOpacity = floats ? 0.28 : 0 } }
+
+    private let scroll = NSScrollView()
+    private var rowsTop: NSLayoutConstraint!
 
     private let stack = NSStackView()
     /// Shown only while a config line is unusable; a click opens the config file.
@@ -86,7 +93,6 @@ final class Sidebar: NSView {
         let document = FlippedView()
         document.translatesAutoresizingMaskIntoConstraints = false
         document.addSubview(stack)
-        let scroll = NSScrollView()
         scroll.drawsBackground = false
         scroll.hasVerticalScroller = true
         scroll.autohidesScrollers = true
@@ -114,6 +120,10 @@ final class Sidebar: NSView {
         footer.setViews([configNote, load], in: .leading)
         footer.translatesAutoresizingMaskIntoConstraints = false
         addSubview(footer)
+        wantsLayer = true
+        layer?.shadowRadius = 14
+        layer?.shadowOffset = CGSize(width: 3, height: 0)
+        rowsTop = scroll.topAnchor.constraint(equalTo: topAnchor)
         rowsToBottom = scroll.bottomAnchor.constraint(equalTo: bottomAnchor)
         rowsToFooter = scroll.bottomAnchor.constraint(equalTo: footer.topAnchor, constant: -6)
         setAccessibilityElement(true)
@@ -121,7 +131,7 @@ final class Sidebar: NSView {
         setAccessibilityIdentifier("mako.sidebar")
         setAccessibilityLabel("Trails")
         NSLayoutConstraint.activate([
-            scroll.topAnchor.constraint(equalTo: topAnchor),
+            rowsTop,
             rowsToBottom,
             footer.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 20),
             footer.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
@@ -142,7 +152,34 @@ final class Sidebar: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         NSColor.sidebarPaper.setFill()
-        dirtyRect.fill()
+        // Views no longer clip to their bounds, so dirtyRect can reach over the page beside.
+        dirtyRect.intersection(bounds).fill()
+    }
+
+    /// Starts the cards below `anchor`, which keeps the traffic lights clear.
+    func pinRows(below anchor: NSLayoutYAxisAnchor) {
+        rowsTop.isActive = false
+        rowsTop = scroll.topAnchor.constraint(equalTo: anchor)
+        rowsTop.isActive = true
+    }
+
+    // MARK: Moving the window
+
+    /// The paper between and around the cards moves the window, as a title bar would.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard let hit = super.hitTest(point) else { return nil }
+        return hit === self || hit === scroll || hit === scroll.contentView || hit === scroll.documentView || hit === stack ? self : hit
+    }
+    override func mouseDown(with event: NSEvent) { window?.moveOrZoom(event) }
+    override func scrollWheel(with event: NSEvent) { scroll.scrollWheel(with: event) }
+
+    override func updateTrackingAreas() {
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect], owner: self))
+    }
+    override func mouseExited(with event: NSEvent) {
+        // A rename in progress keeps the sidebar out.
+        if (window?.firstResponder as? NSView)?.isDescendant(of: self) != true { onExit() }
     }
 
     func update(_ rows: [TrailRow]) {

@@ -29,7 +29,7 @@ Ready when `launch` prints `pid <n> ready`. Launch goes through LaunchServices (
 
 ## In the background or headed
 
-Set `MAKO_BACKGROUND=1` whenever the person is using the Mac. `launch` then starts the test copy behind every other window, Mako never activates itself, and `makoctl` refuses the commands that need focus (`key`, `type`, `time-key`, `click-id`, `middle-click-id`, `middle-click`) with exit 9. Everything else works through AX without focus: `menu`, `press`, `press-id`, `set`, `confirm`, and every read. Recipes use these wherever they can; a step marked **(focus)** needs a headed run, because it proves a real key press, typing into a page, or a real pointer click.
+Set `MAKO_BACKGROUND=1` whenever the person is using the Mac. `launch` then starts the test copy behind every other window, Mako never activates itself, and `makoctl` refuses the commands that need focus (`key`, `type`, `time-key`, `click-id`, `middle-click-id`, `middle-click`, `hover`, `drag`, `double-click`) with exit 9. Everything else works through AX without focus: `menu`, `press`, `press-id`, `set`, `confirm`, and every read. Recipes use these wherever they can; a step marked **(focus)** needs a headed run, because it proves a real key press, typing into a page, or a real pointer click.
 
 Without `MAKO_BACKGROUND`, `key`, `type`, `menu`, `press`, `time-key` and the clicks first bring Mako to the front (exit 7 if another app keeps focus), so a headed run takes focus from whatever the user is doing: warn them first and do not drive while they type. Menus are read and pressed without opening them, because an open menu swallows every later key. Allow ~0.4 s after an action before reading state, or use `wait-title`.
 
@@ -59,6 +59,7 @@ Full command reference, exit codes, AX handles, and recipes: `docs/control.md`. 
 | `set <id> <text>` / `confirm <id>` | set a field's value, then Enter, through AX: the omnibox, a rename field, Settings, a prompt dialog, the sidebar width |
 | `key <combo>` / `type <text>` (focus) | real keys; modifiers `cmd`, `shift`, `opt`, `ctrl`; keys listed in `docs/control.md` |
 | `click-id <id> [fx fy]` / `middle-click-id <id>` / `middle-click <x> <y>` (focus) | real pointer clicks; they move the user's pointer |
+| `window-frame` / `hover <x> <y>` / `drag <x> <y> <dx> <dy>` / `double-click <x> <y>` (focus, except `window-frame`) | the window's frame; real pointer moves, drags and double-clicks in window points |
 | `time-key <combo> <substr>` (focus) | ms from key press to the title containing substr |
 | `shot <path>` | window screenshot (works even when other windows cover it) |
 | `pointer-center` | parks the pointer over the page, for perf runs |

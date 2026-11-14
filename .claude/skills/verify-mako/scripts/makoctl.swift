@@ -113,6 +113,10 @@ let usage = """
     makoctl <pid> click-id <ax-identifier> [fx fy]   real mouse click at a point of the element (fractions of its frame, default 0.5 0.5)
     makoctl <pid> middle-click-id <ax-identifier> [fx fy]   real middle-button click there (a sidebar row)
     makoctl <pid> middle-click <x> <y>     real middle-button click at x,y points from the page's top-left (CSS px at 100% zoom)
+    makoctl <pid> window-frame             "x y width height" of the main window, screen points from the top-left
+    makoctl <pid> hover <x> <y>            move the real pointer to x,y points from the window's top-left
+    makoctl <pid> drag <x> <y> <dx> <dy>   real left-button drag from x,y (window points) by dx,dy
+    makoctl <pid> double-click <x> <y>     real left double-click at x,y (window points)
     """
 
 let args = Array(CommandLine.arguments.dropFirst())
@@ -148,7 +152,7 @@ func mainWindow() -> AXUIElement {
 func focus() {
     // MAKO_BACKGROUND=1: never take focus. Only AX actions work then (menu, press, set, confirm).
     if ProcessInfo.processInfo.environment["MAKO_BACKGROUND"] == "1" {
-        if ["key", "type", "time-key", "click-id", "middle-click-id", "middle-click"].contains(args[1]) { fail("\(args[1]) needs focus; not available with MAKO_BACKGROUND=1", 9) }
+        if ["key", "type", "time-key", "click-id", "middle-click-id", "middle-click", "hover", "drag", "double-click"].contains(args[1]) { fail("\(args[1]) needs focus; not available with MAKO_BACKGROUND=1", 9) }
         return
     }
     guard let running = NSRunningApplication(processIdentifier: pid), !running.isActive else { return }
@@ -162,7 +166,7 @@ func focus() {
     usleep(150_000)
 }
 
-if ["menu", "key", "type", "time-key", "press", "click-id", "middle-click-id", "middle-click"].contains(args[1]) { focus() }
+if ["menu", "key", "type", "time-key", "press", "click-id", "middle-click-id", "middle-click", "hover", "drag", "double-click"].contains(args[1]) { focus() }
 
 func frame(_ id: String) -> CGRect {
     guard let e = find(app, id: id), let pos = attr(e, kAXPositionAttribute), let size = attr(e, kAXSizeAttribute) else { fail("no element \(id)", 4) }
@@ -170,6 +174,27 @@ func frame(_ id: String) -> CGRect {
     AXValueGetValue(pos as! AXValue, .cgPoint, &p)
     AXValueGetValue(size as! AXValue, .cgSize, &sz)
     return CGRect(origin: p, size: sz)
+}
+
+func windowFrame() -> CGRect {
+    guard let pos = attr(mainWindow(), kAXPositionAttribute), let size = attr(mainWindow(), kAXSizeAttribute) else { fail("no window frame", 4) }
+    var p = CGPoint.zero, sz = CGSize.zero
+    AXValueGetValue(pos as! AXValue, .cgPoint, &p)
+    AXValueGetValue(size as! AXValue, .cgSize, &sz)
+    return CGRect(origin: p, size: sz)
+}
+
+/// x,y arguments from index i, as a screen point from the window's top-left.
+func windowPoint(_ i: Int) -> CGPoint {
+    guard args.count > i + 1, let x = Double(args[i]), let y = Double(args[i + 1]) else { fail(usage, 64) }
+    let w = windowFrame()
+    return CGPoint(x: w.minX + x, y: w.minY + y)
+}
+
+func mouse(_ type: CGEventType, _ at: CGPoint, clicks: Int64 = 1) {
+    let e = CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: at, mouseButton: .left)!
+    e.setIntegerValueField(.mouseEventClickState, value: clicks)
+    e.post(tap: .cghidEventTap)
 }
 
 /// A real HID click; moves the user's pointer.
@@ -228,11 +253,8 @@ case "text":
     collect(area)
 case "pointer-center":
     // Cursor work depends on where the pointer is; perf runs park it over the page.
-    guard let pos = attr(mainWindow(), kAXPositionAttribute), let size = attr(mainWindow(), kAXSizeAttribute) else { fail("no window frame", 4) }
-    var p = CGPoint.zero, sz = CGSize.zero
-    AXValueGetValue(pos as! AXValue, .cgPoint, &p)
-    AXValueGetValue(size as! AXValue, .cgSize, &sz)
-    CGWarpMouseCursorPosition(CGPoint(x: p.x + sz.width / 2, y: p.y + sz.height * 0.6))
+    let w = windowFrame()
+    CGWarpMouseCursorPosition(CGPoint(x: w.midX, y: w.minY + w.height * 0.6))
 case "press-id", "set", "confirm":
     guard args.count > 2 else { fail(usage, 64) }
     guard let e = find(app, id: args[2]) else { fail("no element \(args[2])", 4) }
@@ -255,6 +277,28 @@ case "middle-click":
     guard args.count > 3, let x = Double(args[2]), let y = Double(args[3]) else { fail(usage, 64) }
     let f = frame("mako.page")
     hidClick(at: CGPoint(x: f.minX + x, y: f.minY + y), button: .center)
+case "window-frame":
+    let f = windowFrame()
+    print(Int(f.minX), Int(f.minY), Int(f.width), Int(f.height))
+case "hover":
+    mouse(.mouseMoved, windowPoint(2))
+case "drag":
+    let from = windowPoint(2)
+    guard args.count > 5, let dx = Double(args[4]), let dy = Double(args[5]) else { fail(usage, 64) }
+    mouse(.mouseMoved, from); usleep(100_000)
+    mouse(.leftMouseDown, from); usleep(100_000)
+    for step in 1...10 {
+        mouse(.leftMouseDragged, CGPoint(x: from.x + dx * Double(step) / 10, y: from.y + dy * Double(step) / 10))
+        usleep(30_000)
+    }
+    mouse(.leftMouseUp, CGPoint(x: from.x + dx, y: from.y + dy))
+case "double-click":
+    let at = windowPoint(2)
+    mouse(.mouseMoved, at); usleep(100_000)
+    for clicks in [Int64(1), 2] {
+        mouse(.leftMouseDown, at, clicks: clicks); usleep(40_000)
+        mouse(.leftMouseUp, at, clicks: clicks); usleep(40_000)
+    }
 case "windows":
     for w in (attr(app, kAXWindowsAttribute) as? [AXUIElement]) ?? [] { print(line(w)) }
 case "menu-items":

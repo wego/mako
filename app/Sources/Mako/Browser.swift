@@ -55,6 +55,7 @@ final class MenuFirstWindow: NSWindow {
     private static let owned: [(NSEvent.ModifierFlags, String)] = [
         (.command, "t"), ([.command, .option], "t"), ([.command, .shift], "t"),
         (.command, "w"), (.command, "l"), (.command, ","), (.command, "."), ([.command, .option], "c"),
+        ([.command, .control], "s"),
     ] + (1...9).map { (.command, String($0)) }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
@@ -83,6 +84,9 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
     static let maxLiveViews = 8
 
     private enum OmniTarget { case current, newTrail, child(UInt64), find }
+    /// Hidden leaves only the page; the pointer at the window's left edge slides the sidebar
+    /// over the page (peeking) until it leaves again.
+    enum SidebarState { case shown, hidden, peeking }
 
     let window: NSWindow
     private let store = TrailStore()
@@ -111,6 +115,12 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
     private let favicons = Favicons()
     private let divider = DividerView()
     private var sidebarWidth: NSLayoutConstraint!
+    private var sidebarLeading: NSLayoutConstraint!
+    private var pageBesideSidebar: NSLayoutConstraint!
+    private var pageFullWidth: NSLayoutConstraint!
+    private(set) var sidebarState = SidebarState.shown
+    private let edge = EdgeView()
+    private let topStrip = WindowDragStrip()
     private let blank = NSImageView()
     /// Kept in sync on every change so the AX tree never depends on the menu being opened.
     let trailsMenu = NSMenu(title: "Trails")
@@ -123,11 +133,15 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
     override init() {
         window = MenuFirstWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1200, height: 800),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered, defer: false)
         super.init()
         window.delegate = self
         window.tabbingMode = .disallowed
+        // No title bar of its own: the traffic lights sit on the sidebar, the page runs to the
+        // top edge. The title still names the window in the Window list and Mission Control.
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
         buildLayout()
         divider.width = sidebarWidth.constant
         // After the layout exists: installing a constraint-based content view resizes the window.
@@ -170,33 +184,102 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         divider.onDrag = { [unowned self] in setSidebarWidth(sidebarWidth.constant + $0) }
         divider.onSet = { [unowned self] in setSidebarWidth($0) }
 
+        sidebar.onExit = { [unowned self] in if sidebarState == .peeking { setSidebar(.hidden) } }
+        edge.onEnter = { [unowned self] in if sidebarState == .hidden { setSidebar(.peeking) } }
+
         let root = NSView()
-        for view in [sidebar, divider, container] {
+        // The page first, so a peeking sidebar slides in above it.
+        for view in [container, sidebar, divider] {
             view.translatesAutoresizingMaskIntoConstraints = false
             root.addSubview(view)
             view.topAnchor.constraint(equalTo: root.topAnchor).isActive = true
             view.bottomAnchor.constraint(equalTo: root.bottomAnchor).isActive = true
         }
         window.contentView = root
+        if let guide = window.contentLayoutGuide as? NSLayoutGuide { sidebar.pinRows(below: guide.topAnchor) }
+        for view in [edge, topStrip] {
+            view.translatesAutoresizingMaskIntoConstraints = false
+            root.addSubview(view)
+        }
         // A fifth of the window to start with; a dragged width is remembered.
         let saved = UserDefaults.standard.double(forKey: "sidebarWidth")
         sidebarWidth = sidebar.widthAnchor.constraint(equalToConstant: saved > 0 ? saved : min(max(window.frame.width * 0.2, 200), 320))
+        sidebarLeading = sidebar.leadingAnchor.constraint(equalTo: root.leadingAnchor)
+        pageBesideSidebar = container.leadingAnchor.constraint(equalTo: sidebar.trailingAnchor)
+        pageFullWidth = container.leadingAnchor.constraint(equalTo: root.leadingAnchor)
         NSLayoutConstraint.activate([
             blank.centerXAnchor.constraint(equalTo: container.centerXAnchor),
             blank.centerYAnchor.constraint(equalTo: container.centerYAnchor),
             blank.widthAnchor.constraint(equalToConstant: 128),
             blank.heightAnchor.constraint(equalToConstant: 128),
             sidebarWidth,
-            sidebar.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            sidebarLeading,
+            pageBesideSidebar,
             // The divider is wider than the line it draws so it is easy to grab.
             divider.centerXAnchor.constraint(equalTo: sidebar.trailingAnchor),
             divider.widthAnchor.constraint(equalToConstant: 7),
-            container.leadingAnchor.constraint(equalTo: sidebar.trailingAnchor),
             container.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             container.widthAnchor.constraint(greaterThanOrEqualToConstant: 400),
             container.heightAnchor.constraint(greaterThanOrEqualToConstant: 300),
+            edge.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            edge.topAnchor.constraint(equalTo: root.topAnchor),
+            edge.bottomAnchor.constraint(equalTo: root.bottomAnchor),
+            edge.widthAnchor.constraint(equalToConstant: 6),
+            topStrip.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            topStrip.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            topStrip.topAnchor.constraint(equalTo: root.topAnchor),
+            topStrip.heightAnchor.constraint(equalToConstant: 8),
         ])
         root.addSubview(divider, positioned: .above, relativeTo: nil)
+        setSidebar(UserDefaults.standard.bool(forKey: "sidebarHidden") ? .hidden : .shown)
+    }
+
+    /// Shown: the sidebar beside the page, with the traffic lights on it. Hidden: only the page,
+    /// a strip along its top edge to drag the window by. Peeking: the sidebar over the page.
+    private func setSidebar(_ state: SidebarState) {
+        let from = sidebarState
+        sidebarState = state
+        if state != .peeking { UserDefaults.standard.set(state == .hidden, forKey: "sidebarHidden") }
+        // Off before on, so the two never hold at once.
+        let (on, off) = state == .shown ? (pageBesideSidebar!, pageFullWidth!) : (pageFullWidth!, pageBesideSidebar!)
+        off.isActive = false
+        on.isActive = true
+        divider.isHidden = state != .shown
+        edge.isHidden = state != .hidden
+        topStrip.isHidden = state != .hidden
+        for button in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
+            window.standardWindowButton(button)?.isHidden = state == .hidden
+        }
+        sidebar.floats = state == .peeking
+        let slid = state == .hidden ? -sidebarWidth.constant : 0
+        if state == .hidden, from == .shown {
+            sidebarLeading.constant = slid
+            sidebar.isHidden = true
+        } else if from != state {
+            sidebar.isHidden = false
+            NSAnimationContext.runAnimationGroup({ context in
+                context.duration = 0.18
+                context.allowsImplicitAnimation = true
+                sidebarLeading.animator().constant = slid
+                window.contentView?.layoutSubtreeIfNeeded()
+            }, completionHandler: { [weak self] in
+                MainActor.assumeIsolated {
+                    guard let self, self.sidebarState == .hidden else { return }
+                    self.sidebar.isHidden = true
+                }
+            })
+        } else {
+            sidebarLeading.constant = slid
+            sidebar.isHidden = state == .hidden
+        }
+        NSApp.mainMenu?.items.compactMap(\.submenu).flatMap(\.items)
+            .first { $0.action == #selector(toggleSidebar(_:)) }?.title = sidebarMenuTitle
+    }
+
+    var sidebarMenuTitle: String { sidebarState == .shown ? "Hide Sidebar" : "Show Sidebar" }
+
+    @objc func toggleSidebar(_: Any?) {
+        setSidebar(sidebarState == .shown ? .hidden : .shown)
     }
 
     private func setSidebarWidth(_ width: CGFloat) {

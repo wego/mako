@@ -1,0 +1,67 @@
+#!/bin/bash
+# The chromeless window with a real pointer and keys: drag the window by the sidebar's
+# paper and, with the sidebar hidden, by the top strip; a double-click there acts as on a
+# title bar; the very top of the page still takes clicks; the left edge peeks the hidden
+# sidebar and leaving it hides it again; ⌃⌘S toggles the sidebar.
+# Headed: takes focus and moves the pointer. Warn the person first. Exit status = failures.
+set -u
+cd "$(dirname "$0")/../../../.."
+unset MAKO_BACKGROUND
+export MAKO_RUN="$PWD/verify-runs/chrome-headed"
+C=.claude/skills/verify-mako/scripts/control-mako; M=verify-runs/.bin/makoctl
+fails=0; P=
+pass() { echo "PASS $1"; }
+fail() { echo "FAIL $1"; fails=$((fails + 1)); }
+check() { local name=$1; shift; if "$@" >/dev/null 2>&1; then pass "$name"; else fail "$name"; fi; }
+within() { for _ in $(seq 20); do "$@" >/dev/null 2>&1 && return 0; sleep 0.1; done; return 1; }
+moved() { read -r x y _ _ <<<"$($M "$P" window-frame)"; test "$x" = $(($1 + $3)) -a "$y" = $(($2 + $4)); }
+trap '$C stop >/dev/null 2>&1; kill $srv 2>/dev/null; wait $srv 2>/dev/null' EXIT
+
+$C stop >/dev/null 2>&1
+[ "${MAKO_SKIP_BUILD:-}" = 1 ] || $C build >/dev/null || { echo "FAIL build"; exit 99; }
+port=$((20000 + RANDOM % 20000))
+python3 -m http.server "$port" --bind 127.0.0.1 -d .claude/skills/verify-mako/fixtures/chrome >/dev/null 2>&1 &
+srv=$!; sleep 1
+out=$($C launch "" "http://127.0.0.1:$port/top.html" 2>&1) || { echo "FAIL launch: $out"; exit 99; }
+P=$($C pid); sleep 3
+
+echo "== sidebar shown"
+read -r wx wy ww wh <<<"$($M "$P" window-frame)"
+$M "$P" drag 6 $((wh - 60)) 40 30; sleep 0.4
+check drag-sidebar-paper-moves-window moved "$wx" "$wy" 40 30
+read -r wx wy ww wh <<<"$($M "$P" window-frame)"
+$M "$P" drag 120 14 -40 -30; sleep 0.4
+check drag-band-above-cards-moves-window moved "$wx" "$wy" -40 -30
+$M "$P" click-id mako.page 0.5 0.01; sleep 0.4
+check page-top-takes-clicks within sh -c "$M $P title | grep -q 'Top clicked'"
+action=$(defaults read -g AppleActionOnDoubleClick 2>/dev/null || echo Maximize)
+read -r wx wy ww wh <<<"$($M "$P" window-frame)"
+$M "$P" double-click 120 14; sleep 0.8
+case "$action" in
+  None) check double-click-does-nothing moved "$wx" "$wy" 0 0 ;;
+  Minimize) check double-click-minimizes sh -c "$M $P tree 1 | grep -q 'AXMinimized'" ;;
+  *) check double-click-zooms sh -c "test \"\$($M $P window-frame)\" != '$wx $wy $ww $wh'"
+     $M "$P" double-click 120 14; sleep 0.8 ;;
+esac
+
+echo "== sidebar hidden (⌃⌘S)"
+$M "$P" key ctrl+cmd+s
+check key-hides-sidebar within sh -c "! $M $P exists mako.sidebar"
+read -r wx wy ww wh <<<"$($M "$P" window-frame)"
+$M "$P" drag $((ww / 2)) 3 30 20; sleep 0.4
+check drag-top-strip-moves-window moved "$wx" "$wy" 30 20
+$M "$P" key cmd+r; sleep 1
+$M "$P" click-id mako.page 0.5 0.025; sleep 0.4
+check page-below-strip-takes-clicks within sh -c "$M $P title | grep -q 'Top clicked'"
+read -r px _ _ _ <<<"$($M "$P" frame mako.page)"
+$M "$P" hover 2 $((wh / 2))
+check left-edge-peeks-sidebar within $M "$P" exists mako.sidebar
+check peek-leaves-page-in-place test "$($M "$P" frame mako.page | cut -d' ' -f1)" = "$px"
+$M "$P" shot "$MAKO_RUN/peek.png" >/dev/null 2>&1
+$M "$P" hover $((ww * 3 / 4)) $((wh / 2))
+check leaving-hides-peek within sh -c "! $M $P exists mako.sidebar"
+$M "$P" key ctrl+cmd+s
+check key-shows-sidebar within $M "$P" exists mako.sidebar
+
+echo "chrome-headed: $fails failed"
+exit "$fails"

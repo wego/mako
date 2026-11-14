@@ -57,7 +57,7 @@ Exit status is 0 on success, 1 on failure, 64 on bad usage.
 
 ## makoctl
 
-Every command is `makoctl <pid> <command> [args]`. Without `MAKO_BACKGROUND=1`, the commands that send input (`key`, `type`, `menu`, `press`, `time-key`, `click-id`, `middle-click-id`, `middle-click`) first bring Mako to the front: a background app has no key window, so keys sent to it are dropped. With `MAKO_BACKGROUND=1`, the key and pointer commands are refused (exit 9) and `menu`, `press`, `press-id`, `set` and `confirm` act through AX without focus (see [Running while the Mac is in use](#running-while-the-mac-is-in-use)). Read-only commands always work with Mako in the background.
+Every command is `makoctl <pid> <command> [args]`. Without `MAKO_BACKGROUND=1`, the commands that send input (`key`, `type`, `menu`, `press`, `time-key`, `click-id`, `middle-click-id`, `middle-click`, `hover`, `drag`, `double-click`) first bring Mako to the front: a background app has no key window, so keys sent to it are dropped. With `MAKO_BACKGROUND=1`, the key and pointer commands are refused (exit 9) and `menu`, `press`, `press-id`, `set` and `confirm` act through AX without focus (see [Running while the Mac is in use](#running-while-the-mac-is-in-use)). Read-only commands always work with Mako in the background.
 
 ### Reading state
 
@@ -77,6 +77,10 @@ Every command is `makoctl <pid> <command> [args]`. Without `MAKO_BACKGROUND=1`, 
 | `makoctl <pid> click-id <ax-identifier> [fx fy]` | Real mouse click at a point inside the element: `fx`/`fy` are fractions of its frame (default the centre). For a stepper, `0.5 0.25` hits the up arrow and `0.5 0.75` the down arrow. Activates Mako and moves the user's real pointer, so it is refused with `MAKO_BACKGROUND=1` (exit 9). |
 | `makoctl <pid> middle-click-id <ax-identifier> [fx fy]` | Real middle-button click inside the element, like `click-id`: `middle-click-id mako.trail.3` closes that page. Activates Mako, moves the pointer, refused with `MAKO_BACKGROUND=1`. |
 | `makoctl <pid> middle-click <x> <y>` | Real middle-button click at `x`,`y` points from the top-left of `mako.page` (CSS pixels at 100% zoom), for page content such as the `fixtures/trails/m.html` targets. Same focus rules as `click-id`. |
+| `makoctl <pid> window-frame` | `x y width height` of the main window in screen points from the top-left. Read-only. |
+| `makoctl <pid> hover <x> <y>` | Moves the real pointer to `x`,`y` points from the window's top-left: `hover 2 300` reaches the left edge that peeks a hidden sidebar. Same focus rules as `click-id`. |
+| `makoctl <pid> drag <x> <y> <dx> <dy>` | Real left-button drag from `x`,`y` (window points) by `dx`,`dy` in ten steps: dragging the sidebar's paper or the top strip moves the window. Same focus rules as `click-id`. |
+| `makoctl <pid> double-click <x> <y>` | Real left double-click at `x`,`y` (window points), as on a title bar. Same focus rules as `click-id`. |
 
 ### Acting
 
@@ -109,7 +113,7 @@ Every command is `makoctl <pid> <command> [args]`. Without `MAKO_BACKGROUND=1`, 
 | 6 | Screenshot failed: Screen Recording permission. |
 | 7 | Could not bring Mako to the front: another app kept focus (usually someone typing). |
 | 8 | AX degraded: the screen is locked, or with the screen unlocked, the terminal's Accessibility grant went stale. Every command but `shot` checks for this first. |
-| 9 | The command needs focus and `MAKO_BACKGROUND=1` is set (`key`, `type`, `time-key`, `click-id`, `middle-click-id`, `middle-click`). |
+| 9 | The command needs focus and `MAKO_BACKGROUND=1` is set (`key`, `type`, `time-key`, `click-id`, `middle-click-id`, `middle-click`, `hover`, `drag`, `double-click`). |
 | 64 | Bad usage or unknown key. |
 
 ## AX handles
@@ -212,7 +216,7 @@ Dragging a row onto another (before, after or inside it) has no AX equivalent; t
 
 ## Running while the Mac is in use
 
-Set `MAKO_BACKGROUND=1` for both tools. `control-mako launch` then starts the test copy behind every other window and Mako never activates itself; `makoctl` refuses `key`, `type`, `time-key`, `click-id`, `middle-click-id` and `middle-click` with exit 9 (they need focus or move the pointer) and everything else works through AX: `menu`, `press`, `press-id`, `set`, `confirm`, and all the read commands. Mako's own menu items name the browser (or Settings) as their target, so they work while it is in the background; `control-mako quit` sends SIGTERM rather than pressing Quit Mako.
+Set `MAKO_BACKGROUND=1` for both tools. `control-mako launch` then starts the test copy behind every other window and Mako never activates itself; `makoctl` refuses `key`, `type`, `time-key`, `click-id`, `middle-click-id`, `middle-click`, `hover`, `drag` and `double-click` with exit 9 (they need focus or move the pointer) and everything else works through AX: `menu`, `press`, `press-id`, `set`, `confirm`, and all the read commands. Mako's own menu items name the browser (or Settings) as their target, so they work while it is in the background; `control-mako quit` sends SIGTERM rather than pressing Quit Mako.
 
 `scripts/trails-bg` goes further and needs no permissions at all: fixture pages click their own links and the script reads the saved `trails.json` and Mako's log.
 
