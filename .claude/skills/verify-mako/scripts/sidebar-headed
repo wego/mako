@@ -1,0 +1,101 @@
+#!/bin/bash
+# Sidebar rows and the omnibox with a real pointer: hovering a row shows its close and
+# collapse controls and leaving hides them; clicking the close control closes the page;
+# dragging a root one row down swaps it with its first page; dragging a root into the
+# paper above the first card reorders the trails; with the omnibox open, a click on the
+# page or the sidebar closes it without acting, and switching apps leaves it open.
+# Headed: takes focus and moves the pointer. Warn the person first. Exit status = failures.
+set -u
+cd "$(dirname "$0")/../../../.."
+unset MAKO_BACKGROUND
+export MAKO_RUN="$PWD/verify-runs/sidebar-headed"
+C=.claude/skills/verify-mako/scripts/control-mako; M=verify-runs/.bin/makoctl
+J="$MAKO_RUN/state/trails.json"; E="$MAKO_RUN/evidence"
+fails=0; P=
+pass() { echo "PASS $1"; }
+fail() { echo "FAIL $1"; fails=$((fails + 1)); }
+check() { local name=$1; shift; if "$@" >/dev/null 2>&1; then pass "$name"; else fail "$name"; fi; }
+q() { python3 -c "import json; s=json.load(open('$J')); n=s['nodes']; print($1)"; }
+is() { test "$(q "$1")" = "$2"; }
+within() { for _ in $(seq 20); do "$@" >/dev/null 2>&1 && return 0; sleep 0.1; done; return 1; }
+not() { ! "$@"; }
+# at <ax-id> [fx fy]: window points of a spot in that element (default its centre)
+at() {
+  read -r wx wy _ _ <<<"$($M "$P" window-frame)"; read -r x y w h <<<"$($M "$P" frame "$1")"
+  echo $((x - wx + w * ${2:-50} / 100)) $((y - wy + h * ${3:-50} / 100))
+}
+# inked <png> <ax-id>: that element's rect in a window shot holds ink, not just flat paper
+inked() {
+  read -r wx wy ww _ <<<"$($M "$P" window-frame)"; read -r x y w h <<<"$($M "$P" frame "$2")"
+  sips -s format bmp "$1" --out "$1.bmp" >/dev/null 2>&1 && python3 -I -c '
+import struct, sys
+b = open(sys.argv[1], "rb").read()
+off, W, H, bpp = struct.unpack_from("<I", b, 10)[0], *struct.unpack_from("<ii", b, 18), struct.unpack_from("<H", b, 28)[0] // 8
+k = W / float(sys.argv[2]); x, y, w, h = (round(float(v) * k) for v in sys.argv[3:7])
+stride = (W * bpp + 3) // 4 * 4
+lum = [sum(b[i:i + 3]) / 3 for yy in range(y, y + h) for i in
+       [off + ((H - 1 - yy) if H > 0 else yy) * stride + xx * bpp for xx in range(x, x + w)]]
+sys.exit(0 if max(lum) - min(lum) > 20 else 1)' "$1.bmp" "$ww" $((x - wx)) $((y - wy)) "$w" "$h"
+}
+omni() { $M "$P" menu File "$1"; sleep 0.3; $M "$P" set mako.omnibox.field "$2"; $M "$P" confirm mako.omnibox.field; sleep "${3:-2}"; }
+trap '$C stop >/dev/null 2>&1; kill $srv 2>/dev/null; wait $srv 2>/dev/null' EXIT
+
+$C stop >/dev/null 2>&1
+[ "${MAKO_SKIP_BUILD:-}" = 1 ] || $C build >/dev/null || { echo "FAIL build"; exit 99; }
+mkdir -p "$E"
+port=$((20000 + RANDOM % 20000))
+python3 -m http.server "$port" --bind 127.0.0.1 -d .claude/skills/verify-mako/fixtures/trails >/dev/null 2>&1 &
+srv=$!; sleep 1
+U="http://127.0.0.1:$port"
+out=$($C launch "" "$U/a.html" 2>&1) || { echo "FAIL launch: $out"; exit 99; }
+P=$($C pid); sleep 4
+omni "New Trail" "$U/c.html?t2"
+read -r wx wy ww wh <<<"$($M "$P" window-frame)"
+
+echo "== row controls on hover"
+# shellcheck disable=SC2046
+$M "$P" hover $(at mako.trail.1 30); sleep 0.3
+$M "$P" shot "$E/row-hovered.png" >/dev/null
+check hover-shows-close inked "$E/row-hovered.png" mako.trail.1.close
+check hover-shows-toggle inked "$E/row-hovered.png" mako.trail.1.toggle
+$M "$P" hover $((ww * 3 / 4)) $((wh / 2)); sleep 0.3
+$M "$P" shot "$E/row-left.png" >/dev/null
+check leaving-hides-close not inked "$E/row-left.png" mako.trail.1.close
+check leaving-hides-toggle not inked "$E/row-left.png" mako.trail.1.toggle
+# shellcheck disable=SC2046
+$M "$P" hover $(at mako.trail.4 30); sleep 0.3
+$M "$P" click-id mako.trail.4.close; sleep 0.6
+check click-close-closes-page is 's["roots"]' "[1]"
+$M "$P" key cmd+shift+t; sleep 1
+check reopen-brings-it-back is 's["roots"]' "[1, 4]"
+
+echo "== dragging a root"
+# shellcheck disable=SC2046
+set -- $(at mako.trail.1 40 50); read -r _ _ _ rh <<<"$($M "$P" frame mako.trail.1)"
+$M "$P" drag "$1" "$2" 0 $((rh + rh / 2 - 2)); sleep 0.6
+check root-dragged-below-its-first-page-swaps is '(s["roots"][0], n["2"]["children"][0])' "(2, 1)"
+read -r _ cy _ _ <<<"$($M "$P" frame mako.trail.2)"
+# shellcheck disable=SC2046
+set -- $(at mako.trail.4 40 50)
+$M "$P" drag "$1" "$2" 0 $((cy - wy - 8 - $2)); sleep 0.6
+check root-dropped-above-first-card-reorders-trails is 's["roots"]' "[4, 2]"
+
+echo "== omnibox closes on a click outside it"
+$M "$P" menu Trails "Page B"; sleep 0.4
+$M "$P" menu File "New Page in Trail"; sleep 0.3; $M "$P" type "unsent"
+cp "$J" "$E/pre-click.json"
+$M "$P" click-id mako.page 0.5 0.6; sleep 0.4
+check page-click-closes-omnibox within sh -c "! $M $P exists mako.omnibox"
+check page-click-acts-on-nothing cmp -s "$J" "$E/pre-click.json"
+$M "$P" menu File "New Trail"; sleep 0.3
+$M "$P" click-id mako.trail.4; sleep 0.4
+check sidebar-click-closes-omnibox within sh -c "! $M $P exists mako.omnibox"
+check sidebar-click-acts-on-nothing cmp -s "$J" "$E/pre-click.json"
+$M "$P" menu File "New Trail"; sleep 0.3
+osascript -e 'tell application "Finder" to activate'; sleep 0.8
+check switching-apps-keeps-omnibox $M "$P" exists mako.omnibox
+$M "$P" key escape; sleep 0.3
+check escape-closes-omnibox within sh -c "! $M $P exists mako.omnibox"
+
+echo "sidebar-headed: $fails failed"
+exit "$fails"

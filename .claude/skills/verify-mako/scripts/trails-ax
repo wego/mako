@@ -19,7 +19,6 @@ is() { test "$(q "$1")" = "$2"; }
 # within <command...>: polls for up to 2 s
 within() { for _ in $(seq 20); do "$@" >/dev/null 2>&1 && return 0; sleep 0.1; done; return 1; }
 front() { osascript -e 'tell application "System Events" to get name of first process whose frontmost is true' 2>/dev/null; }
-not() { ! "$@"; }
 # inked <png> <ax-id>: that element's rect in a window shot holds ink, not just flat paper
 inked() {
   read -r wx wy ww _ <<<"$($M "$P" window-frame)"; read -r x y w h <<<"$($M "$P" frame "$2")"
@@ -33,6 +32,8 @@ lum = [sum(b[i:i + 3]) / 3 for yy in range(y, y + h) for i in
        [off + ((H - 1 - yy) if H > 0 else yy) * stride + xx * bpp for xx in range(x, x + w)]]
 sys.exit(0 if max(lum) - min(lum) > 20 else 1)' "$1.bmp" "$ww" $((x - wx)) $((y - wy)) "$w" "$h"
 }
+# unpainted <png> <ax-id>: the element is in the tree with a frame, but its rect is flat paper
+unpainted() { $M "$P" frame "$2" >/dev/null 2>&1 && ! inked "$@"; }
 omni() { $M "$P" menu File "$1"; sleep 0.3; $M "$P" set mako.omnibox.field "$2"; $M "$P" confirm mako.omnibox.field; sleep "${3:-2}"; }
 trap '$C stop >/dev/null 2>&1; kill $srv 2>/dev/null; wait $srv 2>/dev/null' EXIT
 
@@ -69,8 +70,8 @@ echo "== row controls"
 check every-row-has-a-close-control test "$($M "$P" tree | grep -c 'id=\"mako\.trail\.[0-9]*\.close\"')" = 3
 $M "$P" shot "$E/rows-no-hover.png" >/dev/null
 check close-control-has-a-frame $M "$P" frame mako.trail.3.close
-check no-close-without-hover not inked "$E/rows-no-hover.png" mako.trail.3.close
-check no-expanded-toggle-without-hover not inked "$E/rows-no-hover.png" mako.trail.1.toggle
+check no-close-without-hover unpainted "$E/rows-no-hover.png" mako.trail.3.close
+check no-expanded-toggle-without-hover unpainted "$E/rows-no-hover.png" mako.trail.1.toggle
 $M "$P" press-id mako.trail.1.toggle; sleep 0.5
 $M "$P" shot "$E/rows-collapsed.png" >/dev/null
 check collapsed-toggle-shows-faintly inked "$E/rows-collapsed.png" mako.trail.1.toggle
@@ -130,7 +131,12 @@ check load-hidden-below-cap sh -c "! $M $P exists mako.sidebar.load"
 $M "$P" menu File "New Trail"; sleep 0.3
 check no-status-without-a-message sh -c "! $M $P exists mako.omnibox.status"
 check field-names-a-new-trail sh -c "$M $P tree | grep -q 'id=\"mako.omnibox.field\".*desc=\"New trail'"
-$M "$P" set mako.omnibox.field ""; $M "$P" confirm mako.omnibox.field; sleep 0.3
+$M "$P" set mako.omnibox.field "$U/c.html?unsent"
+$M "$P" shot "$E/omnibox-white-page.png" >/dev/null
+cp "$J" "$E/pre-scrim.json"
+$M "$P" press-id mako.omnibox.scrim; sleep 0.3
+check scrim-closes-omnibox sh -c "! $M $P exists mako.omnibox"
+check scrim-drops-typed-text cmp -s "$J" "$E/pre-scrim.json"
 omni "New Trail" "$U/c.html?t2"
 check new-trail is 's["roots"]' "[1, 4]"
 $M "$P" menu Trails "Move Page Up"; sleep 0.4
@@ -149,6 +155,10 @@ omni "New Page in Trail" "$U/c.html?child"
 check new-page-is-child is 'n["5"]["parent"]' 4
 omni "Open Location…" "$U/c.html?inplace"
 check open-location-stays-in-page is '(len(n), n["5"]["url"].endswith("inplace"))' "(5, True)"
+omni "Open Location…" "$U/dark.html"
+$M "$P" menu File "Open Location…"; sleep 0.3
+$M "$P" shot "$E/omnibox-dark-page.png" >/dev/null
+$M "$P" press-id mako.omnibox.scrim; sleep 0.3
 
 echo "== close and undo"
 cp "$J" "$E/pre-close.json"
