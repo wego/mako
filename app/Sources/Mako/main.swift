@@ -94,6 +94,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             menu("History", [
                 item("Back", #selector(Browser.back), "["),
                 item("Forward", #selector(Browser.forward), "]"),
+                .separator(),
+                item("Clear History…", #selector(Browser.clearHistory), ""),
             ]),
             trails,
         ].forEach(main.addItem)

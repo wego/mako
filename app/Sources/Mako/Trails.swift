@@ -37,7 +37,8 @@ final class TrailStore {
     private(set) var pages: Set<UInt64> = []
     /// The colour slot the next new trail would get.
     private(set) var nextColor = 0
-    private var state = ""
+    /// The core's whole state, as it returned it.
+    private(set) var state = ""
 
     /// Beside the config, so MAKO_CONFIG runs get their own trails.
     static var fileURL: URL { Core.configURL.deletingLastPathComponent().appending(path: "trails.json") }

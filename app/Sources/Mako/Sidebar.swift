@@ -42,6 +42,12 @@ extension NSColor {
     }
 }
 
+extension NSImage {
+    /// Holds a site icon's place until one arrives.
+    @MainActor static let globe = NSImage(systemSymbolName: "globe", accessibilityDescription: nil)?
+        .withSymbolConfiguration(.init(pointSize: 12, weight: .light))
+}
+
 extension TrailRow {
     /// The core's flat rows split into trails: each depth-0 row starts one.
     static func trails(_ rows: [TrailRow]) -> [[TrailRow]] {
@@ -496,12 +502,10 @@ private final class RowView: NSView, NSDraggingSource, NSTextFieldDelegate {
 
     /// The site's icon, or a faint globe holding its place until one arrives.
     func setIcon(_ image: NSImage?) {
-        icon.image = image ?? Self.globe
+        icon.image = image ?? .globe
         icon.contentTintColor = image == nil ? .tertiaryLabelColor : nil
         setAccessibilityHelp(image == nil ? "no site icon" : "site icon")
     }
-    private static let globe = NSImage(systemSymbolName: "globe", accessibilityDescription: nil)?
-        .withSymbolConfiguration(.init(pointSize: 12, weight: .light))
 
     override func accessibilityPerformPress() -> Bool {
         sidebar.onSelect(row.id)

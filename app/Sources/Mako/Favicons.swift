@@ -49,6 +49,12 @@ final class Favicons {
         return nil
     }
 
+    /// The icon already held for a page's address. Never fetches: a suggestion is not a visit.
+    func known(for address: String) -> NSImage? {
+        guard let page = URL(string: address), Self.key(page) != nil else { return nil }
+        return declared[address].flatMap { images[$0] } ?? URL(string: "/favicon.ico", relativeTo: page).flatMap { images[$0.absoluteURL] }
+    }
+
     /// A loaded page declared `icon` (from `script`).
     func pageDeclared(_ icon: URL, on page: URL) {
         guard Self.key(page) != nil else { return }

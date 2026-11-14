@@ -11,6 +11,7 @@ enum Core {
         # Mako config – edits apply on the next navigation.
         max_trails = 3
         # restore_session = false   # start empty instead of reopening your trails
+        # remember_history = false  # keep no history; the address bar then suggests open pages only
         # search = https://duckduckgo.com/?q=%s
 
         # block <domain> [HH:MM-HH:MM] [mon-fri | sat,sun | weekdays | weekends | daily]
@@ -25,9 +26,9 @@ enum Core {
         try? template.write(to: configURL, atomically: true, encoding: .utf8)
     }
 
-    private static var config: String { (try? String(contentsOf: configURL, encoding: .utf8)) ?? "" }
+    static var config: String { (try? String(contentsOf: configURL, encoding: .utf8)) ?? "" }
 
-    private static func take(_ p: UnsafeMutablePointer<CChar>?) -> String? {
+    static func take(_ p: UnsafeMutablePointer<CChar>?) -> String? {
         guard let p else { return nil }
         defer { mako_free(p) }
         return String(cString: p)
@@ -53,8 +54,14 @@ enum Core {
     static func resolve(_ input: String) -> URL? { take(mako_resolve(config, input)).flatMap(URL.init(string:)) }
 
     static func blockReason(host: String, at date: Date = .now) -> String? {
+        let (weekday, minute) = weekdayAndMinute(date)
+        return take(mako_blocked(config, host, weekday, minute))
+    }
+
+    /// Local time as the core's blocklist schedules read it: weekday 0 = Monday, minute of the day.
+    static func weekdayAndMinute(_ date: Date) -> (UInt8, UInt16) {
         let c = Calendar.current.dateComponents([.weekday, .hour, .minute], from: date)
-        let weekday = UInt8((c.weekday! + 5) % 7) // Calendar: Sunday = 1; core: Monday = 0
-        return take(mako_blocked(config, host, weekday, UInt16(c.hour! * 60 + c.minute!)))
+        // Calendar: Sunday = 1.
+        return (UInt8((c.weekday! + 5) % 7), UInt16(c.hour! * 60 + c.minute!))
     }
 }
