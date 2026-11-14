@@ -124,9 +124,16 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
     private let blank = NSImageView()
     /// Kept in sync on every change so the AX tree never depends on the menu being opened.
     let trailsMenu = NSMenu(title: "Trails")
+    /// Everything the open omnibox puts over the window: the scrim, the halo and the panel.
+    private let omniLayer = NSView()
+    private let scrim = Scrim()
+    private let halo = Halo()
     private let omnibox = NSGlassEffectView()
     private let field = OmniboxField()
     private let hint = NSTextField(labelWithString: "")
+    /// An error or message for the open omnibox; it goes when the omnibox next opens.
+    private var omniMessage: String?
+    private var omniboxOpen: Bool { !omniLayer.isHidden }
     private var folderWatch: DispatchSourceFileSystemObject?
     private var fileWatch: DispatchSourceFileSystemObject?
 
@@ -177,7 +184,7 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         sidebar.onToggle = { [unowned self] in toggle($0) }
         sidebar.onRename = { [unowned self] in apply("rename", ["id": $0, "name": $1]) }
         sidebar.onClose = { [unowned self] in close($0) }
-        sidebar.onPlace = { [unowned self] in apply("place", ["id": $0, "target": $1, "place": $2.rawValue]) }
+        sidebar.onPlace = { [unowned self] in if apply("place", ["id": $0, "target": $1, "place": $2.rawValue]) != nil { NSSound.beep() } }
         sidebar.iconFor = { [unowned self] in favicons.icon(for: $0.url) }
         sidebar.onOpenConfig = { [unowned self] in openConfig(nil) }
         favicons.onChange = { [unowned self] in sidebar.refreshIcons() }
@@ -318,7 +325,7 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
             if let view {
                 view.frame = container.bounds
                 view.autoresizingMask = [.width, .height]
-                container.addSubview(view, positioned: .below, relativeTo: omnibox)
+                container.addSubview(view)
             }
         }
         if let id = active?.id {
@@ -332,12 +339,12 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         sidebar.update(store.rows)
         showConfig()
         rebuildTrailsMenu()
-        if omnibox.isHidden, let view { window.makeFirstResponder(view) }
+        if !omniboxOpen, let view { window.makeFirstResponder(view) }
     }
 
     /// What the window shows from the config: the cap and config notes, the omnibox status.
     private func showConfig() {
-        if !omnibox.isHidden { updateHint() }
+        if omniboxOpen { updateHint() }
         sidebar.showLoad(trails: store.rows.filter { $0.depth == 0 }.count, max: Core.maxTrails)
         sidebar.showConfigIssue(Core.configError)
     }
@@ -486,7 +493,7 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         field.target = self
         field.action = #selector(omniboxEntered(_:))
         hint.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
-        hint.textColor = .secondaryLabelColor
+        hint.textColor = .caution
         hint.lineBreakMode = .byTruncatingTail
         hint.maximumNumberOfLines = 0
 
@@ -497,10 +504,28 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         stack.edgeInsets = NSEdgeInsets(top: 14, left: 18, bottom: 14, right: 18)
         omnibox.contentView = stack
         omnibox.cornerRadius = 18
-        omnibox.isHidden = true
-        omnibox.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(omnibox)
+        scrim.onDismiss = { [unowned self] in hideOmnibox() }
+        guard let root = window.contentView else { return }
+        omniLayer.isHidden = true
+        for view in [omniLayer, scrim, halo, omnibox] { view.translatesAutoresizingMaskIntoConstraints = false }
+        omniLayer.addSubview(scrim)
+        omniLayer.addSubview(halo)
+        omniLayer.addSubview(omnibox)
+        // Over everything, the sidebar too: while it is open, the omnibox is the window's one task.
+        root.addSubview(omniLayer, positioned: .above, relativeTo: nil)
         NSLayoutConstraint.activate([
+            omniLayer.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            omniLayer.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            omniLayer.topAnchor.constraint(equalTo: root.topAnchor),
+            omniLayer.bottomAnchor.constraint(equalTo: root.bottomAnchor),
+            scrim.leadingAnchor.constraint(equalTo: omniLayer.leadingAnchor),
+            scrim.trailingAnchor.constraint(equalTo: omniLayer.trailingAnchor),
+            scrim.topAnchor.constraint(equalTo: omniLayer.topAnchor),
+            scrim.bottomAnchor.constraint(equalTo: omniLayer.bottomAnchor),
+            halo.leadingAnchor.constraint(equalTo: omnibox.leadingAnchor, constant: -Halo.inset),
+            halo.trailingAnchor.constraint(equalTo: omnibox.trailingAnchor, constant: Halo.inset),
+            halo.topAnchor.constraint(equalTo: omnibox.topAnchor, constant: -Halo.inset),
+            halo.bottomAnchor.constraint(equalTo: omnibox.bottomAnchor, constant: Halo.inset),
             omnibox.centerXAnchor.constraint(equalTo: container.centerXAnchor),
             omnibox.topAnchor.constraint(equalTo: container.topAnchor, constant: 80),
             omnibox.widthAnchor.constraint(equalTo: container.widthAnchor, multiplier: 0.7),
@@ -510,15 +535,22 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         ])
     }
 
-    private func showOmnibox(for target: OmniTarget, text: String? = nil, message: String? = nil) {
+    private func showOmnibox(for target: OmniTarget, text: String? = nil) {
         omniTarget = target
         field.stringValue = text ?? ""
-        updateHint(message: message)
-        omnibox.isHidden = false
-        container.addSubview(omnibox, positioned: .above, relativeTo: nil)
+        let purpose = switch target {
+        case .current: store.active == nil ? "New trail – search or enter address" : "This page – search or enter address"
+        case .newTrail: "New trail – search or enter address"
+        case .child: "New page beneath this one – search or enter address"
+        case .find: "Find in this page"
+        }
+        field.setAccessibilityLabel(purpose)
+        omniMessage = nil
+        updateHint()
+        omniLayer.isHidden = false
         window.makeFirstResponder(field)
         field.currentEditor()?.selectAll(nil)
-        container.layoutSubtreeIfNeeded()
+        omniLayer.superview?.layoutSubtreeIfNeeded()
         field.fitFont()
     }
 
@@ -526,20 +558,16 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         if note.object as? NSTextField === field { field.fitFont() }
     }
 
+    /// The status line shows only an error or message: the omnibox's own, else the config's.
     private func updateHint(message: String? = nil) {
-        let purpose = switch omniTarget {
-        case .current: store.active == nil ? "Starts a new trail" : "Loads in this page"
-        case .newTrail: "Starts a new trail"
-        case .child: "Opens a page beneath this one"
-        case .find: "Finds in this page – Enter for the next match"
-        }
-        let trails = store.rows.filter { $0.depth == 0 }.count
-        hint.stringValue = [message ?? Core.configError, purpose, "\(trails) trail\(trails == 1 ? "" : "s"), \(store.pages.count) page\(store.pages.count == 1 ? "" : "s")"]
-            .compactMap { $0 }.joined(separator: "\n")
+        if let message { omniMessage = message }
+        let text = omniMessage ?? Core.configError
+        hint.stringValue = text ?? ""
+        hint.isHidden = text == nil
     }
 
     private func hideOmnibox() {
-        omnibox.isHidden = true
+        omniLayer.isHidden = true
         if let shown { window.makeFirstResponder(shown) }
     }
 
@@ -550,7 +578,7 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
     }
 
     @objc func omniboxEntered(_: Any?) {
-        guard !omnibox.isHidden else { return }
+        guard omniboxOpen else { return }
         if case .find = omniTarget { return findNext(nil) }
         guard let url = Core.resolve(field.stringValue) else { return hideOmnibox() }
         var error: String?
@@ -567,7 +595,7 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
             NSSound.beep()
             return updateHint(message: "Can’t open: \(error). ⌥⌘T opens a page in the current trail.")
         }
-        omnibox.isHidden = true
+        omniLayer.isHidden = true
         render()
     }
 
@@ -602,7 +630,8 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         let config = WKFindConfiguration()
         config.backwards = backwards
         shown.find(field.stringValue, configuration: config) { [weak self] result in
-            if !result.matchFound { self?.updateHint(message: "Not found") }
+            self?.omniMessage = result.matchFound ? nil : "Not found"
+            self?.updateHint()
         }
     }
 
@@ -820,7 +849,7 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         }
         // Hand focus back to the page that opened the sign-in.
         if !Self.background { window.makeKeyAndOrderFront(nil) }
-        window.makeFirstResponder(omnibox.isHidden ? shown : field)
+        window.makeFirstResponder(omniboxOpen ? field : shown)
     }
 
     func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String,
@@ -918,6 +947,74 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
             <div style="text-align:center"><h1 style="font-weight:600;margin:0 0 8px">\(esc(title))</h1>
             <p style="opacity:.6">\(esc(body))</p></div>
             """
+    }
+}
+
+/// Dims the window under the open omnibox. A click on it closes the omnibox and goes no
+/// further: on a dimmed window it reads as dismissing, not as a click on the link beneath.
+@MainActor
+final class Scrim: NSView {
+    var onDismiss: () -> Void = {}
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        setAccessibilityElement(true)
+        setAccessibilityRole(.button)
+        setAccessibilityIdentifier("mako.omnibox.scrim")
+        setAccessibilityLabel("Close address bar")
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.scrim.setFill()
+        dirtyRect.intersection(bounds).fill()
+    }
+    override func mouseDown(with event: NSEvent) { onDismiss() }
+    override func rightMouseDown(with event: NSEvent) { onDismiss() }
+    override func otherMouseDown(with event: NSEvent) { onDismiss() }
+    override var mouseDownCanMoveWindow: Bool { false }
+    override func accessibilityPerformPress() -> Bool {
+        onDismiss()
+        return true
+    }
+}
+
+/// An ink ring and a deep shadow around the omnibox panel, so it reads over any page in
+/// either appearance.
+@MainActor
+final class Halo: NSView {
+    static let inset: CGFloat = 3
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        layer?.shadowOpacity = 1
+        layer?.shadowRadius = 28
+        layer?.shadowOffset = CGSize(width: 0, height: -10)
+        setAccessibilityElement(false)
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func layout() {
+        super.layout()
+        guard let layer else { return }
+        layer.shadowPath = CGPath(roundedRect: bounds, cornerWidth: 18 + Self.inset, cornerHeight: 18 + Self.inset, transform: nil)
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            layer.shadowColor = NSColor.black.withAlphaComponent(0.45).cgColor
+        }
+    }
+
+    override func viewDidChangeEffectiveAppearance() { needsLayout = true }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let ring = NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 18 + Self.inset - 1, yRadius: 18 + Self.inset - 1)
+        ring.lineWidth = 2
+        NSColor.ink.withAlphaComponent(0.85).setStroke()
+        ring.stroke()
     }
 }
 
