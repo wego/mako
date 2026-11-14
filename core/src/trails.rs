@@ -415,19 +415,28 @@ fn subtree(s: &Trails, id: Id) -> Vec<Id> {
 
 /// Sidebar rows in display order; children of collapsed pages are left out.
 pub fn rows(state: &Trails) -> Vec<Row> {
-    fn walk(s: &Trails, id: Id, depth: usize, color: u8, out: &mut Vec<Row>) {
+    walk(state, false)
+}
+
+/// Every open page in sidebar order, pages inside collapsed ones included.
+pub fn pages(state: &Trails) -> Vec<Row> {
+    walk(state, true)
+}
+
+fn walk(state: &Trails, hidden: bool) -> Vec<Row> {
+    fn visit(s: &Trails, id: Id, depth: usize, color: u8, hidden: bool, out: &mut Vec<Row>) {
         let n = &s.nodes[&id];
         let label = n.name.as_deref().or(Some(n.title.as_str()).filter(|t| !t.is_empty())).unwrap_or(&n.url);
         out.push(Row {
             id, depth, label: label.into(), url: n.url.clone(), title: n.title.clone(), active: s.active == Some(id),
             collapsed: n.collapsed, has_children: !n.children.is_empty(), color,
         });
-        if !n.collapsed {
-            n.children.iter().for_each(|c| walk(s, *c, depth + 1, color, out));
+        if hidden || !n.collapsed {
+            n.children.iter().for_each(|c| visit(s, *c, depth + 1, color, hidden, out));
         }
     }
     let mut out = vec![];
-    state.roots.iter().for_each(|r| walk(state, *r, 0, state.colors.get(r).copied().unwrap_or(0), &mut out));
+    state.roots.iter().for_each(|r| visit(state, *r, 0, state.colors.get(r).copied().unwrap_or(0), hidden, &mut out));
     out
 }
 

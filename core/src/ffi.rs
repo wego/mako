@@ -2,6 +2,7 @@
 //! re-parsed; it is a few lines, so this costs microseconds.
 //! Returned strings are owned by the caller and must go back via `mako_free`.
 
+use crate::history::{self, History, Moment};
 use crate::{blocked, parse_config, resolve, set_setting, trails, Config};
 use std::ffi::{c_char, CStr, CString};
 
@@ -94,6 +95,68 @@ pub extern "C" fn mako_trails_apply(cfg: *const c_char, state: *const c_char, ac
     trails_reply(result)
 }
 
+/// The history as an owned handle: at thousands of entries it is too big to pass as text on
+/// every keystroke. NULL when `json` is a history this build cannot read; empty or NULL text
+/// is a fresh, empty history. Release with `mako_history_free`.
+#[no_mangle]
+pub extern "C" fn mako_history_load(json: *const c_char) -> *mut History {
+    let text = unsafe { text(json) };
+    let loaded = if text.is_empty() { Ok(History::default()) } else { history::load(text) };
+    loaded.map_or(std::ptr::null_mut(), |h| Box::into_raw(Box::new(h)))
+}
+
+/// Swaps the history behind `h` for `change(it)`; true when that changed it.
+unsafe fn update(h: *mut History, change: impl FnOnce(History) -> History) -> bool {
+    let Some(slot) = h.as_mut() else { return false };
+    let before = std::mem::take(slot);
+    let unchanged = before.clone();
+    *slot = change(before);
+    *slot != unchanged
+}
+
+/// A page finished loading at `now` (unix seconds; weekday 0 = Monday, minute of the local
+/// day). True when the history changed and should be saved.
+#[no_mangle]
+pub extern "C" fn mako_history_visit(h: *mut History, cfg: *const c_char, url: *const c_char, title: *const c_char, now: u64, weekday: u8, minute: u16) -> bool {
+    let cfg = config(cfg);
+    unsafe { update(h, |it| history::visit(&cfg, it, text(url), text(title), Moment { now, weekday, minute })) }
+}
+
+/// A page's title changed after it loaded. True when the history changed.
+#[no_mangle]
+pub extern "C" fn mako_history_retitle(h: *mut History, url: *const c_char, title: *const c_char) -> bool {
+    unsafe { update(h, |it| history::retitle(it, text(url), text(title))) }
+}
+
+/// Forgets every visit. True when there was anything to forget.
+#[no_mangle]
+pub extern "C" fn mako_history_clear(h: *mut History) -> bool {
+    unsafe { update(h, |_| History::default()) }
+}
+
+/// The history as JSON, for the shell to write to disk.
+#[no_mangle]
+pub extern "C" fn mako_history_save(h: *const History) -> *mut c_char {
+    out(unsafe { h.as_ref() }.map(history::save))
+}
+
+/// Address bar rows for `query` as a JSON array (see history::Suggestion), from the open
+/// pages in `trails` (the state the trails calls return) and the history.
+#[no_mangle]
+pub extern "C" fn mako_suggest(h: *const History, cfg: *const c_char, trails: *const c_char, query: *const c_char, now: u64) -> *mut c_char {
+    let open = trails::load(unsafe { text(trails) }).map(|s| trails::pages(&s)).unwrap_or_default();
+    let none = History::default();
+    let found = history::suggest(&config(cfg), unsafe { text(query) }, unsafe { h.as_ref() }.unwrap_or(&none), &open, now);
+    out(serde_json::to_string(&found).ok())
+}
+
+#[no_mangle]
+pub extern "C" fn mako_history_free(h: *mut History) {
+    if !h.is_null() {
+        drop(unsafe { Box::from_raw(h) });
+    }
+}
+
 #[no_mangle]
 pub extern "C" fn mako_free(s: *mut c_char) {
     if !s.is_null() {
@@ -161,5 +224,47 @@ mod tests {
         assert!(apply(&two["state"], "{}")["error"].as_str().unwrap().starts_with("invalid trails state: action"));
         let garbage = c("{");
         assert!(call(|| mako_trails_load(garbage.as_ptr()))["error"].is_string());
+    }
+
+    #[test]
+    fn history_round_trips_through_the_c_abi() {
+        let (on, off) = (c("block x.com"), c("remember_history = false"));
+        let garbage = c("{");
+        assert!(mako_history_load(garbage.as_ptr()).is_null());
+        let h = mako_history_load(std::ptr::null());
+        let (url, title, blocked_url) = (c("https://a.test/rust"), c("Rust"), c("https://x.com/"));
+        assert!(!mako_history_visit(h, off.as_ptr(), url.as_ptr(), title.as_ptr(), 100, 0, 0), "history off");
+        assert!(!mako_history_visit(h, on.as_ptr(), blocked_url.as_ptr(), title.as_ptr(), 100, 0, 0), "blocked host");
+        assert!(mako_history_visit(h, on.as_ptr(), url.as_ptr(), title.as_ptr(), 100, 0, 0));
+        let renamed = c("Rust book");
+        assert!(mako_history_retitle(h, url.as_ptr(), renamed.as_ptr()));
+        assert!(!mako_history_retitle(h, url.as_ptr(), renamed.as_ptr()), "the same title is no change");
+
+        let saved = call(|| mako_history_save(h));
+        assert_eq!(saved["entries"][0], serde_json::json!({"url": "https://a.test/rust", "title": "Rust book", "visits": 1, "last_visit": 100}));
+        let again = mako_history_load(c(&saved.to_string()).as_ptr());
+        assert_eq!(call(|| mako_history_save(again)), saved);
+        mako_history_free(again);
+
+        let fresh = call(|| mako_trails_load(std::ptr::null()));
+        let (state, action) = (c(&fresh["state"].to_string()), c(r#"{"type":"open_trail","url":"https://b.test/rust"}"#));
+        let open = call(|| mako_trails_apply(on.as_ptr(), state.as_ptr(), action.as_ptr()));
+        let (trails, query) = (c(&open["state"].to_string()), c("rust"));
+        let found = call(|| mako_suggest(h, on.as_ptr(), trails.as_ptr(), query.as_ptr(), 200));
+        assert_eq!(
+            found,
+            serde_json::json!([
+                {"kind": "open_page", "id": 1, "color": 0, "title": "https://b.test/rust", "url": "https://b.test/rust"},
+                {"kind": "history", "title": "Rust book", "url": "https://a.test/rust"},
+            ])
+        );
+        let with_off = call(|| mako_suggest(h, off.as_ptr(), trails.as_ptr(), query.as_ptr(), 200));
+        assert_eq!(with_off.as_array().unwrap().len(), 1, "history off: the open page only");
+        assert_eq!(call(|| mako_suggest(h, on.as_ptr(), std::ptr::null(), query.as_ptr(), 200)).as_array().unwrap().len(), 1, "no trails: history only");
+
+        assert!(mako_history_clear(h));
+        assert!(!mako_history_clear(h), "already empty");
+        assert_eq!(call(|| mako_history_save(h))["entries"], serde_json::json!([]));
+        mako_history_free(h);
     }
 }
