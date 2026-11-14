@@ -24,7 +24,7 @@ func str(_ e: AXUIElement, _ a: String) -> String? { (attr(e, a) as? String).fla
 func line(_ e: AXUIElement) -> String {
     var parts = [str(e, kAXRoleAttribute) ?? "?"]
     for (k, a) in [("sub", kAXSubroleAttribute), ("id", kAXIdentifierAttribute), ("title", kAXTitleAttribute),
-                   ("desc", kAXDescriptionAttribute), ("value", kAXValueAttribute)] {
+                   ("desc", kAXDescriptionAttribute), ("value", kAXValueAttribute), ("placeholder", "AXPlaceholderValue")] {
         if let s = str(e, a) { parts.append("\(k)=\"\(s.prefix(80).replacingOccurrences(of: "\n", with: "⏎"))\"") }
     }
     if let on = attr(e, "AXMenuItemMarkChar") as? String, !on.isEmpty { parts.append("checked") }
@@ -71,7 +71,9 @@ func menuItem(_ app: AXUIElement, _ menu: String, _ item: String) -> AXUIElement
 }
 
 let keyCodes: [String: CGKeyCode] = [
-    "return": 36, "escape": 53, "tab": 48, "f": 3, "g": 5, "t": 17, "w": 13, "l": 37, "r": 15, "z": 6, "c": 8, "a": 0, "v": 9, "x": 7, "[": 33, "]": 30,
+    "return": 36, "escape": 53, "tab": 48, "[": 33, "]": 30,
+    "a": 0, "s": 1, "d": 2, "f": 3, "h": 4, "g": 5, "z": 6, "x": 7, "c": 8, "v": 9, "b": 11, "q": 12, "w": 13, "e": 14, "r": 15,
+    "y": 16, "t": 17, "o": 31, "u": 32, "i": 34, "p": 35, "l": 37, "j": 38, "k": 40, "n": 45, "m": 46,
     "1": 18, "2": 19, "3": 20, "4": 21, "5": 23, "6": 22, "7": 26, "8": 28, "9": 25, "=": 24, "-": 27, "0": 29, ",": 43, ".": 47,
 ]
 
@@ -85,9 +87,16 @@ func post(_ pid: pid_t, key: CGKeyCode, flags: CGEventFlags = [], text: String? 
     }
 }
 
+/// The main window: the largest of the process's windows, so an open Settings window or
+/// sign-in popup in front of it is not what `shot` captures.
 func windowID(_ pid: pid_t) -> Int? {
     let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
-    return list.first { ($0[kCGWindowOwnerPID as String] as? pid_t) == pid && ($0[kCGWindowLayer as String] as? Int) == 0 }?[kCGWindowNumber as String] as? Int
+    func area(_ w: [String: Any]) -> Double {
+        let b = w[kCGWindowBounds as String] as? [String: Double] ?? [:]
+        return (b["Width"] ?? 0) * (b["Height"] ?? 0)
+    }
+    return list.filter { ($0[kCGWindowOwnerPID as String] as? pid_t) == pid && ($0[kCGWindowLayer as String] as? Int) == 0 }
+        .max { area($0) < area($1) }?[kCGWindowNumber as String] as? Int
 }
 
 let usage = """
@@ -113,6 +122,10 @@ let usage = """
     makoctl <pid> click-id <ax-identifier> [fx fy]   real mouse click at a point of the element (fractions of its frame, default 0.5 0.5)
     makoctl <pid> middle-click-id <ax-identifier> [fx fy]   real middle-button click there (a sidebar row)
     makoctl <pid> middle-click <x> <y>     real middle-button click at x,y points from the page's top-left (CSS px at 100% zoom)
+    makoctl <pid> window-frame             "x y width height" of the main window, screen points from the top-left
+    makoctl <pid> hover <x> <y>            move the real pointer to x,y points from the window's top-left
+    makoctl <pid> drag <x> <y> <dx> <dy>   real left-button drag from x,y (window points) by dx,dy
+    makoctl <pid> double-click <x> <y>     real left double-click at x,y (window points)
     """
 
 let args = Array(CommandLine.arguments.dropFirst())
@@ -134,8 +147,16 @@ func failIfDegraded() {
 }
 if args[1] != "shot" { failIfDegraded() }
 
+/// The largest standard window, as `shot` picks: Settings is a standard window too, and
+/// while it is open it can come first in AXWindows.
 func mainWindow() -> AXUIElement {
-    guard let window = (attr(app, kAXWindowsAttribute) as? [AXUIElement])?.first(where: { str($0, kAXSubroleAttribute) == kAXStandardWindowSubrole })
+    func area(_ w: AXUIElement) -> Double {
+        var size = CGSize.zero
+        if let v = attr(w, kAXSizeAttribute) { AXValueGetValue(v as! AXValue, .cgSize, &size) }
+        return size.width * size.height
+    }
+    guard let window = (attr(app, kAXWindowsAttribute) as? [AXUIElement])?
+        .filter({ str($0, kAXSubroleAttribute) == kAXStandardWindowSubrole }).max(by: { area($0) < area($1) })
     else {
         // The screen can lock while wait-title or time-key polls.
         failIfDegraded()
@@ -148,7 +169,7 @@ func mainWindow() -> AXUIElement {
 func focus() {
     // MAKO_BACKGROUND=1: never take focus. Only AX actions work then (menu, press, set, confirm).
     if ProcessInfo.processInfo.environment["MAKO_BACKGROUND"] == "1" {
-        if ["key", "type", "time-key", "click-id", "middle-click-id", "middle-click"].contains(args[1]) { fail("\(args[1]) needs focus; not available with MAKO_BACKGROUND=1", 9) }
+        if ["key", "type", "time-key", "click-id", "middle-click-id", "middle-click", "hover", "drag", "double-click"].contains(args[1]) { fail("\(args[1]) needs focus; not available with MAKO_BACKGROUND=1", 9) }
         return
     }
     guard let running = NSRunningApplication(processIdentifier: pid), !running.isActive else { return }
@@ -162,7 +183,7 @@ func focus() {
     usleep(150_000)
 }
 
-if ["menu", "key", "type", "time-key", "press", "click-id", "middle-click-id", "middle-click"].contains(args[1]) { focus() }
+if ["menu", "key", "type", "time-key", "press", "click-id", "middle-click-id", "middle-click", "hover", "drag", "double-click"].contains(args[1]) { focus() }
 
 func frame(_ id: String) -> CGRect {
     guard let e = find(app, id: id), let pos = attr(e, kAXPositionAttribute), let size = attr(e, kAXSizeAttribute) else { fail("no element \(id)", 4) }
@@ -170,6 +191,27 @@ func frame(_ id: String) -> CGRect {
     AXValueGetValue(pos as! AXValue, .cgPoint, &p)
     AXValueGetValue(size as! AXValue, .cgSize, &sz)
     return CGRect(origin: p, size: sz)
+}
+
+func windowFrame() -> CGRect {
+    guard let pos = attr(mainWindow(), kAXPositionAttribute), let size = attr(mainWindow(), kAXSizeAttribute) else { fail("no window frame", 4) }
+    var p = CGPoint.zero, sz = CGSize.zero
+    AXValueGetValue(pos as! AXValue, .cgPoint, &p)
+    AXValueGetValue(size as! AXValue, .cgSize, &sz)
+    return CGRect(origin: p, size: sz)
+}
+
+/// x,y arguments from index i, as a screen point from the window's top-left.
+func windowPoint(_ i: Int) -> CGPoint {
+    guard args.count > i + 1, let x = Double(args[i]), let y = Double(args[i + 1]) else { fail(usage, 64) }
+    let w = windowFrame()
+    return CGPoint(x: w.minX + x, y: w.minY + y)
+}
+
+func mouse(_ type: CGEventType, _ at: CGPoint, clicks: Int64 = 1) {
+    let e = CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: at, mouseButton: .left)!
+    e.setIntegerValueField(.mouseEventClickState, value: clicks)
+    e.post(tap: .cghidEventTap)
 }
 
 /// A real HID click; moves the user's pointer.
@@ -228,11 +270,8 @@ case "text":
     collect(area)
 case "pointer-center":
     // Cursor work depends on where the pointer is; perf runs park it over the page.
-    guard let pos = attr(mainWindow(), kAXPositionAttribute), let size = attr(mainWindow(), kAXSizeAttribute) else { fail("no window frame", 4) }
-    var p = CGPoint.zero, sz = CGSize.zero
-    AXValueGetValue(pos as! AXValue, .cgPoint, &p)
-    AXValueGetValue(size as! AXValue, .cgSize, &sz)
-    CGWarpMouseCursorPosition(CGPoint(x: p.x + sz.width / 2, y: p.y + sz.height * 0.6))
+    let w = windowFrame()
+    CGWarpMouseCursorPosition(CGPoint(x: w.midX, y: w.minY + w.height * 0.6))
 case "press-id", "set", "confirm":
     guard args.count > 2 else { fail(usage, 64) }
     guard let e = find(app, id: args[2]) else { fail("no element \(args[2])", 4) }
@@ -255,6 +294,28 @@ case "middle-click":
     guard args.count > 3, let x = Double(args[2]), let y = Double(args[3]) else { fail(usage, 64) }
     let f = frame("mako.page")
     hidClick(at: CGPoint(x: f.minX + x, y: f.minY + y), button: .center)
+case "window-frame":
+    let f = windowFrame()
+    print(Int(f.minX), Int(f.minY), Int(f.width), Int(f.height))
+case "hover":
+    mouse(.mouseMoved, windowPoint(2))
+case "drag":
+    let from = windowPoint(2)
+    guard args.count > 5, let dx = Double(args[4]), let dy = Double(args[5]) else { fail(usage, 64) }
+    mouse(.mouseMoved, from); usleep(100_000)
+    mouse(.leftMouseDown, from); usleep(100_000)
+    for step in 1...10 {
+        mouse(.leftMouseDragged, CGPoint(x: from.x + dx * Double(step) / 10, y: from.y + dy * Double(step) / 10))
+        usleep(30_000)
+    }
+    mouse(.leftMouseUp, CGPoint(x: from.x + dx, y: from.y + dy))
+case "double-click":
+    let at = windowPoint(2)
+    mouse(.mouseMoved, at); usleep(100_000)
+    for clicks in [Int64(1), 2] {
+        mouse(.leftMouseDown, at, clicks: clicks); usleep(40_000)
+        mouse(.leftMouseUp, at, clicks: clicks); usleep(40_000)
+    }
 case "windows":
     for w in (attr(app, kAXWindowsAttribute) as? [AXUIElement]) ?? [] { print(line(w)) }
 case "menu-items":

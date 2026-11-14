@@ -62,12 +62,14 @@ pub extern "C" fn mako_blocked(cfg: *const c_char, host: *const c_char, weekday:
 }
 
 /// What the shell gets back from every trails call: the new state to keep and save,
-/// the sidebar rows and every page id (collapsed ones included), or an error (the shell then keeps the state it had).
+/// the sidebar rows, every page id (collapsed ones included) and the colour slot a new trail
+/// would get, or an error (the shell then keeps the state it had).
 fn trails_reply(result: Result<trails::Trails, trails::Error>) -> *mut c_char {
     let json = match result {
         Ok(state) => serde_json::json!({
             "rows": trails::rows(&state),
             "pages": state.nodes.keys().collect::<Vec<_>>(),
+            "next_color": trails::next_color(&state),
             "state": state,
         }),
         Err(e) => serde_json::json!({ "error": e.to_string() }),
@@ -151,6 +153,7 @@ mod tests {
         let two = apply(&one["state"], r#"{"type":"open_child","parent":1,"url":"https://b.test/"}"#);
         assert_eq!(two["rows"][1]["depth"], 1);
         assert_eq!(two["rows"][1]["active"], true);
+        assert_eq!((fresh["next_color"].as_u64(), two["next_color"].as_u64()), (Some(0), Some(1)), "the slot a new trail would take");
         assert_eq!(apply(&two["state"], r#"{"type":"open_trail","url":"x"}"#)["error"], "trail cap reached (1)");
         let closed = apply(&two["state"], r#"{"type":"close","id":2}"#);
         let back = apply(&closed["state"], r#"{"type":"undo_close"}"#);

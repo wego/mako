@@ -18,6 +18,8 @@ extension NSColor {
     static let cardShadow = adaptive(NSColor(hex: 0x3c1e0a, alpha: 0.22), NSColor(hex: 0x000000, alpha: 0.45))
     /// Terracotta: a warning that still sits on cream paper.
     static let caution = adaptive(NSColor(hex: 0xa8502e), NSColor(hex: 0xe58d6c))
+    /// Over the window while the omnibox is open.
+    static let scrim = adaptive(NSColor(hex: 0x1a120c, alpha: 0.32), NSColor(hex: 0x000000, alpha: 0.55))
 
     /// Earthy inks that read on cream paper, each lightened for dark mode: green, blue, pink,
     /// ochre, plum, teal, wine, forest, umber.
@@ -62,6 +64,16 @@ final class Sidebar: NSView {
     var onPlace: (_ page: UInt64, _ target: UInt64, DropPlace) -> Void = { _, _, _ in }
     var iconFor: (TrailRow) -> NSImage? = { _ in nil }
     var onOpenConfig: () -> Void = {}
+    /// The pointer left the sidebar.
+    var onExit: () -> Void = {}
+    /// The corner button: hides the sidebar, or keeps a peeking one open.
+    var onToggleSidebar: () -> Void = {}
+    private let sidebarButton = NSButton()
+    /// Peeking over the page: a shadow lifts it off the page beneath.
+    var floats = false { didSet { layer?.shadowOpacity = floats ? 0.28 : 0 } }
+
+    private let scroll = NSScrollView()
+    private var rowsTop: NSLayoutConstraint!
 
     private let stack = NSStackView()
     /// Shown only while a config line is unusable; a click opens the config file.
@@ -74,6 +86,9 @@ final class Sidebar: NSView {
     private var rowsToFooter: NSLayoutConstraint!
     private var rowViews: [UInt64: RowView] = [:]
     private var generation = 0
+    /// A page dragged over the paper between cards: the root it lands beside, and where the
+    /// line is drawn.
+    private var gapDrop: (root: UInt64, place: DropPlace, lineY: CGFloat)? { didSet { needsDisplay = true } }
 
     init() {
         super.init(frame: .zero)
@@ -86,7 +101,6 @@ final class Sidebar: NSView {
         let document = FlippedView()
         document.translatesAutoresizingMaskIntoConstraints = false
         document.addSubview(stack)
-        let scroll = NSScrollView()
         scroll.drawsBackground = false
         scroll.hasVerticalScroller = true
         scroll.autohidesScrollers = true
@@ -114,17 +128,51 @@ final class Sidebar: NSView {
         footer.setViews([configNote, load], in: .leading)
         footer.translatesAutoresizingMaskIntoConstraints = false
         addSubview(footer)
-        rowsToBottom = scroll.bottomAnchor.constraint(equalTo: bottomAnchor)
+        wantsLayer = true
+        layer?.shadowRadius = 14
+        layer?.shadowOffset = CGSize(width: 3, height: 0)
+        rowsTop = scroll.topAnchor.constraint(equalTo: topAnchor)
+        // A plain outline split a third of the way in: SF Symbols' sidebar.left adds row lines.
+        let icon = NSImage(size: NSSize(width: 17, height: 14), flipped: false) { rect in
+            let frame = rect.insetBy(dx: 0.75, dy: 0.75)
+            let path = NSBezierPath(roundedRect: frame, xRadius: 3, yRadius: 3)
+            path.move(to: NSPoint(x: frame.minX + 5.5, y: frame.minY))
+            path.line(to: NSPoint(x: frame.minX + 5.5, y: frame.maxY))
+            path.lineWidth = 1.5
+            NSColor.black.setStroke()
+            path.stroke()
+            return true
+        }
+        icon.isTemplate = true
+        sidebarButton.image = icon
+        sidebarButton.isBordered = false
+        sidebarButton.contentTintColor = .ink.withAlphaComponent(0.5)
+        sidebarButton.target = self
+        sidebarButton.action = #selector(toggleSidebarPressed)
+        sidebarButton.setAccessibilityIdentifier("mako.sidebar.toggle")
+        sidebarButton.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(sidebarButton)
+        setPeeking(false)
+        // The cards stop above the corner button's row.
+        rowsToBottom = scroll.bottomAnchor.constraint(equalTo: sidebarButton.topAnchor, constant: -6)
         rowsToFooter = scroll.bottomAnchor.constraint(equalTo: footer.topAnchor, constant: -6)
+        // A footer note shorter than the corner button must not pull the cards over it.
+        rowsToFooter.priority = .defaultHigh
+        scroll.bottomAnchor.constraint(lessThanOrEqualTo: sidebarButton.topAnchor, constant: -6).isActive = true
         setAccessibilityElement(true)
         setAccessibilityRole(.list)
         setAccessibilityIdentifier("mako.sidebar")
         setAccessibilityLabel("Trails")
+        registerForDraggedTypes([pageDragType])
         NSLayoutConstraint.activate([
-            scroll.topAnchor.constraint(equalTo: topAnchor),
+            rowsTop,
             rowsToBottom,
             footer.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 20),
-            footer.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
+            footer.trailingAnchor.constraint(equalTo: sidebarButton.leadingAnchor, constant: -8),
+            sidebarButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
+            sidebarButton.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -10),
+            sidebarButton.widthAnchor.constraint(equalToConstant: 22),
+            sidebarButton.heightAnchor.constraint(equalToConstant: 22),
             footer.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -10),
             scroll.leadingAnchor.constraint(equalTo: leadingAnchor),
             scroll.trailingAnchor.constraint(equalTo: trailingAnchor),
@@ -142,7 +190,76 @@ final class Sidebar: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         NSColor.sidebarPaper.setFill()
-        dirtyRect.fill()
+        // Views no longer clip to their bounds, so dirtyRect can reach over the page beside.
+        dirtyRect.intersection(bounds).fill()
+        if let gapDrop {
+            NSColor.controlAccentColor.setFill()
+            NSRect(x: 16, y: gapDrop.lineY - 1, width: bounds.width - 32, height: 2).fill()
+        }
+    }
+
+    // MARK: Dropping between trails
+
+    /// The paper between cards takes a dragged page as a trail of its own there; a root
+    /// dropped there reorders the trails. Dropped just above its own card, a page lands
+    /// before its own root, so the core makes it that trail's root.
+    private func gap(at point: NSPoint) -> (root: UInt64, place: DropPlace, lineY: CGFloat)? {
+        let cards = stack.arrangedSubviews.compactMap { $0 as? CardView }.map { ($0.root, convert($0.bounds, from: $0)) }
+        guard scroll.frame.contains(point), !cards.contains(where: { $0.1.contains(point) }), let last = cards.last else { return nil }
+        if let below = cards.first(where: { point.y > $0.1.midY }) { return (below.0, .before, below.1.maxY + stack.spacing / 2) }
+        return (last.0, .after, last.1.minY - stack.spacing / 2)
+    }
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation { draggingUpdated(sender) }
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        gapDrop = sender.draggingPasteboard.string(forType: pageDragType) == nil ? nil : gap(at: convert(sender.draggingLocation, from: nil))
+        return gapDrop == nil ? [] : .move
+    }
+    override func draggingExited(_ sender: NSDraggingInfo?) { gapDrop = nil }
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        defer { gapDrop = nil }
+        guard let page = sender.draggingPasteboard.string(forType: pageDragType).flatMap(UInt64.init),
+              let drop = gap(at: convert(sender.draggingLocation, from: nil)) else { return false }
+        onPlace(page, drop.root, drop.place)
+        return true
+    }
+
+    /// Starts the cards below `anchor`, which keeps the traffic lights clear.
+    func pinRows(below anchor: NSLayoutYAxisAnchor) {
+        rowsTop.isActive = false
+        rowsTop = scroll.topAnchor.constraint(equalTo: anchor)
+        rowsTop.isActive = true
+    }
+
+    /// Peeking, the corner button keeps the sidebar open; otherwise it hides it.
+    func setPeeking(_ peeking: Bool) {
+        let title = peeking ? "Keep Sidebar Open" : "Hide Sidebar"
+        sidebarButton.toolTip = "\(title) (⌃⌘S)"
+        sidebarButton.setAccessibilityLabel(title)
+    }
+
+    @objc private func toggleSidebarPressed() { onToggleSidebar() }
+
+    // MARK: Moving the window
+
+    /// The paper between and around the cards moves the window, as a title bar would.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard let hit = super.hitTest(point) else { return nil }
+        return hit === self || hit === scroll || hit === scroll.contentView || hit === scroll.documentView || hit === stack ? self : hit
+    }
+    override func mouseDown(with event: NSEvent) { window?.moveOrZoom(event) }
+    /// Moves happen only from a mouse-down here. Left at AppKit's default, a drag that began
+    /// on the divider moved the window once the pointer crossed onto the paper.
+    override var mouseDownCanMoveWindow: Bool { false }
+    override func scrollWheel(with event: NSEvent) { scroll.scrollWheel(with: event) }
+
+    override func updateTrackingAreas() {
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect], owner: self))
+    }
+    override func mouseExited(with event: NSEvent) {
+        // A rename in progress keeps the sidebar out.
+        if (window?.firstResponder as? NSView)?.isDescendant(of: self) != true { onExit() }
     }
 
     func update(_ rows: [TrailRow]) {
@@ -199,6 +316,7 @@ final class Sidebar: NSView {
 private final class CardView: NSView {
     private let rows: [RowView]
     private let color: Int
+    var root: UInt64 { rows[0].row.id }
 
     init(_ rows: [RowView], color: Int) {
         self.rows = rows
@@ -286,32 +404,44 @@ private final class RowView: NSView, NSDraggingSource, NSTextFieldDelegate {
     private let icon = NSImageView()
     private unowned let sidebar: Sidebar
     private let label: NSTextField
-    private var hovered = false { didSet { needsDisplay = true } }
+    private var hovered = false {
+        didSet {
+            needsDisplay = true
+            showControls()
+        }
+    }
+    private let toggle: RowControl
+    private let close: RowControl
     private var drop: DropPlace? { didSet { needsDisplay = true } }
     private var mouseDownAt: NSPoint?
     private var editor: NSTextField?
     private var indent: NSLayoutConstraint!
 
-    /// Levels the row is drawn in: its depth, capped so the name keeps 40 pt beside the toggle.
-    /// Past the first level each adds 16 pt; the icon, gaps and toggle take 70.
-    var level: Int { min(row.depth, max(1, Int((bounds.width - 70 - 40) / 16) + 1)) }
+    /// Levels the row is drawn in: its depth, capped so the name keeps 40 pt beside the controls.
+    /// Past the first level each adds 16 pt; the icon, gaps, toggle and close take 84.
+    var level: Int { min(row.depth, max(1, Int((bounds.width - 84 - 40) / 16) + 1)) }
 
     init(_ row: TrailRow, sidebar: Sidebar) {
         self.row = row
         self.sidebar = sidebar
         label = NSTextField(labelWithString: row.label)
+        toggle = RowControl(symbol: row.hasChildren ? (row.collapsed ? "chevron.right" : "chevron.down") : nil)
+        close = RowControl(symbol: "xmark")
         super.init(frame: .zero)
 
-        let toggle = NSButton(title: row.hasChildren ? (row.collapsed ? "▸" : "▾") : "", target: self, action: #selector(toggled))
-        toggle.isBordered = false
-        toggle.attributedTitle = NSAttributedString(string: toggle.title, attributes: [
-            .foregroundColor: NSColor.ink.withAlphaComponent(0.55), .font: NSFont.systemFont(ofSize: 11),
-        ])
         // Kept in the row (not hidden) so every name ends at the same place.
+        toggle.target = self
+        toggle.action = #selector(toggled)
         toggle.isEnabled = row.hasChildren
         toggle.setAccessibilityElement(row.hasChildren)
         toggle.setAccessibilityIdentifier("mako.trail.\(row.id).toggle")
         toggle.setAccessibilityLabel(row.collapsed ? "Expand" : "Collapse")
+        close.target = self
+        close.action = #selector(closeFromMenu)
+        close.setAccessibilityIdentifier("mako.trail.\(row.id).close")
+        close.setAccessibilityLabel(row.hasChildren ? "Close page and pages beneath" : "Close page")
+        close.toolTip = close.accessibilityLabel()
+        showControls()
 
         label.font = .systemFont(ofSize: 13, weight: row.active ? .semibold : (row.depth == 0 ? .medium : .regular))
         label.textColor = .ink
@@ -323,7 +453,7 @@ private final class RowView: NSView, NSDraggingSource, NSTextFieldDelegate {
         icon.imageScaling = .scaleProportionallyUpOrDown
         icon.setAccessibilityElement(false)
 
-        for view in [toggle, icon, label] {
+        for view in [toggle, close, icon, label] {
             view.translatesAutoresizingMaskIntoConstraints = false
             addSubview(view)
         }
@@ -341,10 +471,13 @@ private final class RowView: NSView, NSDraggingSource, NSTextFieldDelegate {
             label.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 8),
             label.trailingAnchor.constraint(equalTo: toggle.leadingAnchor, constant: -2),
             label.centerYAnchor.constraint(equalTo: centerYAnchor),
-            toggle.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -4),
-            toggle.widthAnchor.constraint(equalToConstant: 14),
-            toggle.centerYAnchor.constraint(equalTo: centerYAnchor),
-        ])
+            toggle.trailingAnchor.constraint(equalTo: close.leadingAnchor),
+            close.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -4),
+        ] + [toggle, close].flatMap { [
+            $0.widthAnchor.constraint(equalToConstant: 14),
+            $0.heightAnchor.constraint(equalToConstant: 18),
+            $0.centerYAnchor.constraint(equalTo: centerYAnchor),
+        ] })
         toolTip = row.url
         registerForDraggedTypes([pageDragType])
         setAccessibilityElement(true)
@@ -404,10 +537,21 @@ private final class RowView: NSView, NSDraggingSource, NSTextFieldDelegate {
 
     override func updateTrackingAreas() {
         trackingAreas.forEach(removeTrackingArea)
-        addTrackingArea(NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeInKeyWindow], owner: self))
+        addTrackingArea(NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeInActiveApp], owner: self))
+        // Rows are rebuilt on every change, under a pointer that has not moved since.
+        if NSApp.isActive, let window, window.isVisible {
+            hovered = bounds.contains(convert(window.mouseLocationOutsideOfEventStream, from: nil))
+        }
     }
     override func mouseEntered(with event: NSEvent) { hovered = true }
     override func mouseExited(with event: NSEvent) { hovered = false }
+
+    /// The close and collapse controls show only under the pointer, except that a collapsed
+    /// row keeps a faint toggle: otherwise its hidden pages would leave no trace.
+    private func showControls() {
+        close.alphaValue = hovered ? 1 : 0
+        toggle.alphaValue = hovered ? 1 : (row.collapsed ? 0.5 : 0)
+    }
 
     // MARK: Click, rename, context menu
 
@@ -534,10 +678,45 @@ private final class RowView: NSView, NSDraggingSource, NSTextFieldDelegate {
     }
 }
 
+/// A row's close or collapse control: a small glyph in the row's ink, with a soft disc
+/// under the pointer.
+@MainActor
+private final class RowControl: NSButton {
+    private var pointed = false { didSet { needsDisplay = true } }
+
+    init(symbol: String?) {
+        super.init(frame: .zero)
+        isBordered = false
+        imagePosition = .imageOnly
+        image = symbol.flatMap { NSImage(systemSymbolName: $0, accessibilityDescription: nil) }?
+            .withSymbolConfiguration(.init(pointSize: 9, weight: .bold))
+        contentTintColor = .ink.withAlphaComponent(0.55)
+        translatesAutoresizingMaskIntoConstraints = false
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { false }
+
+    override func draw(_ dirtyRect: NSRect) {
+        if pointed, isEnabled {
+            NSColor.ink.withAlphaComponent(0.1).setFill()
+            NSBezierPath(roundedRect: bounds.insetBy(dx: -1, dy: 1), xRadius: 4, yRadius: 4).fill()
+        }
+        super.draw(dirtyRect)
+    }
+
+    override func updateTrackingAreas() {
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeInActiveApp], owner: self))
+    }
+    override func mouseEntered(with event: NSEvent) { pointed = true }
+    override func mouseExited(with event: NSEvent) { pointed = false }
+}
+
 /// The draggable edge between the sidebar and the page.
 @MainActor
 final class DividerView: NSView {
-    var onDrag: (CGFloat) -> Void = { _ in }
     /// Accessibility clients set the sidebar width in points, which is how runs resize it.
     var onSet: (CGFloat) -> Void = { _ in }
     /// The sidebar's current width, reported as the accessibility value.
@@ -557,6 +736,14 @@ final class DividerView: NSView {
         NSRect(x: bounds.midX - 0.5, y: 0, width: 1, height: bounds.height).fill()
     }
     override func resetCursorRects() { addCursorRect(bounds, cursor: .resizeLeftRight) }
-    override func mouseDragged(with event: NSEvent) { onDrag(event.deltaX) }
+    private var dragStart: (x: CGFloat, width: CGFloat)?
+    /// Handled here so the press never travels up to the window, which could start a move.
+    override func mouseDown(with event: NSEvent) { dragStart = (event.locationInWindow.x, width) }
+    override func mouseDragged(with event: NSEvent) {
+        guard let dragStart else { return }
+        // From the press, not per-event deltas, so the edge stays under the pointer.
+        onSet(dragStart.width + event.locationInWindow.x - dragStart.x)
+    }
+    override func mouseUp(with event: NSEvent) { dragStart = nil }
     override var mouseDownCanMoveWindow: Bool { false }
 }

@@ -35,6 +35,8 @@ final class TrailStore {
     private(set) var rows: [TrailRow] = []
     /// Every page id, including pages hidden inside collapsed ones.
     private(set) var pages: Set<UInt64> = []
+    /// The colour slot the next new trail would get.
+    private(set) var nextColor = 0
     private var state = ""
 
     /// Beside the config, so MAKO_CONFIG runs get their own trails.
@@ -72,6 +74,7 @@ final class TrailStore {
         state = String(decoding: data, as: UTF8.self)
         rows = (reply["rows"] as? [[String: Any]] ?? []).compactMap(TrailRow.init)
         pages = Set(reply["pages"] as? [UInt64] ?? [])
+        nextColor = reply["next_color"] as? Int ?? 0
         return nil
     }
 
