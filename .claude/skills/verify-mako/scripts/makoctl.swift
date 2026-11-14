@@ -85,9 +85,16 @@ func post(_ pid: pid_t, key: CGKeyCode, flags: CGEventFlags = [], text: String? 
     }
 }
 
+/// The main window: the largest of the process's windows, so an open Settings window or
+/// sign-in popup in front of it is not what `shot` captures.
 func windowID(_ pid: pid_t) -> Int? {
     let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
-    return list.first { ($0[kCGWindowOwnerPID as String] as? pid_t) == pid && ($0[kCGWindowLayer as String] as? Int) == 0 }?[kCGWindowNumber as String] as? Int
+    func area(_ w: [String: Any]) -> Double {
+        let b = w[kCGWindowBounds as String] as? [String: Double] ?? [:]
+        return (b["Width"] ?? 0) * (b["Height"] ?? 0)
+    }
+    return list.filter { ($0[kCGWindowOwnerPID as String] as? pid_t) == pid && ($0[kCGWindowLayer as String] as? Int) == 0 }
+        .max { area($0) < area($1) }?[kCGWindowNumber as String] as? Int
 }
 
 let usage = """
