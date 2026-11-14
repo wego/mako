@@ -24,7 +24,7 @@ func str(_ e: AXUIElement, _ a: String) -> String? { (attr(e, a) as? String).fla
 func line(_ e: AXUIElement) -> String {
     var parts = [str(e, kAXRoleAttribute) ?? "?"]
     for (k, a) in [("sub", kAXSubroleAttribute), ("id", kAXIdentifierAttribute), ("title", kAXTitleAttribute),
-                   ("desc", kAXDescriptionAttribute), ("value", kAXValueAttribute)] {
+                   ("desc", kAXDescriptionAttribute), ("value", kAXValueAttribute), ("placeholder", "AXPlaceholderValue")] {
         if let s = str(e, a) { parts.append("\(k)=\"\(s.prefix(80).replacingOccurrences(of: "\n", with: "⏎"))\"") }
     }
     if let on = attr(e, "AXMenuItemMarkChar") as? String, !on.isEmpty { parts.append("checked") }
@@ -71,7 +71,9 @@ func menuItem(_ app: AXUIElement, _ menu: String, _ item: String) -> AXUIElement
 }
 
 let keyCodes: [String: CGKeyCode] = [
-    "return": 36, "escape": 53, "tab": 48, "f": 3, "g": 5, "t": 17, "w": 13, "l": 37, "r": 15, "z": 6, "c": 8, "a": 0, "v": 9, "x": 7, "[": 33, "]": 30,
+    "return": 36, "escape": 53, "tab": 48, "[": 33, "]": 30,
+    "a": 0, "s": 1, "d": 2, "f": 3, "h": 4, "g": 5, "z": 6, "x": 7, "c": 8, "v": 9, "b": 11, "q": 12, "w": 13, "e": 14, "r": 15,
+    "y": 16, "t": 17, "o": 31, "u": 32, "i": 34, "p": 35, "l": 37, "j": 38, "k": 40, "n": 45, "m": 46,
     "1": 18, "2": 19, "3": 20, "4": 21, "5": 23, "6": 22, "7": 26, "8": 28, "9": 25, "=": 24, "-": 27, "0": 29, ",": 43, ".": 47,
 ]
 
@@ -85,9 +87,16 @@ func post(_ pid: pid_t, key: CGKeyCode, flags: CGEventFlags = [], text: String? 
     }
 }
 
+/// The main window: the largest of the process's windows, so an open Settings window or
+/// sign-in popup in front of it is not what `shot` captures.
 func windowID(_ pid: pid_t) -> Int? {
     let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
-    return list.first { ($0[kCGWindowOwnerPID as String] as? pid_t) == pid && ($0[kCGWindowLayer as String] as? Int) == 0 }?[kCGWindowNumber as String] as? Int
+    func area(_ w: [String: Any]) -> Double {
+        let b = w[kCGWindowBounds as String] as? [String: Double] ?? [:]
+        return (b["Width"] ?? 0) * (b["Height"] ?? 0)
+    }
+    return list.filter { ($0[kCGWindowOwnerPID as String] as? pid_t) == pid && ($0[kCGWindowLayer as String] as? Int) == 0 }
+        .max { area($0) < area($1) }?[kCGWindowNumber as String] as? Int
 }
 
 let usage = """
@@ -138,8 +147,16 @@ func failIfDegraded() {
 }
 if args[1] != "shot" { failIfDegraded() }
 
+/// The largest standard window, as `shot` picks: Settings is a standard window too, and
+/// while it is open it can come first in AXWindows.
 func mainWindow() -> AXUIElement {
-    guard let window = (attr(app, kAXWindowsAttribute) as? [AXUIElement])?.first(where: { str($0, kAXSubroleAttribute) == kAXStandardWindowSubrole })
+    func area(_ w: AXUIElement) -> Double {
+        var size = CGSize.zero
+        if let v = attr(w, kAXSizeAttribute) { AXValueGetValue(v as! AXValue, .cgSize, &size) }
+        return size.width * size.height
+    }
+    guard let window = (attr(app, kAXWindowsAttribute) as? [AXUIElement])?
+        .filter({ str($0, kAXSubroleAttribute) == kAXStandardWindowSubrole }).max(by: { area($0) < area($1) })
     else {
         // The screen can lock while wait-title or time-key polls.
         failIfDegraded()

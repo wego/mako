@@ -22,10 +22,10 @@ $C launch "" "$PROBE"
 
 - **Page receives ⌘Z.** `$M $P key cmd+z`. `wait-title "got z"`.
 - **Page receives ⌘R.** `$M $P key cmd+r`. `wait-title "got r"` (the page handled it; no reload).
-- **Page receives ⌘F.** `$M $P key cmd+f`. `wait-title "got f"`; `value mako.omnibox.status` does not say `Finds in this page`.
-- **Mako keeps ⌘T.** `$M $P key cmd+t`. `value mako.omnibox.status` says `Starts a new trail` and `1 trail, 1 page`, and `title` is still `got f`, not `got t`. `key escape`.
-- **Mako keeps ⌘L and ⇧⌘T.** `key cmd+l`: the status says `Loads in this page`; `key escape`. `key cmd+shift+t` (nothing to reopen, so Mako beeps): `title` is unchanged.
-- **Proof.** `title` and `value mako.omnibox.status` after each step to `$E/keys.txt`.
+- **Page receives ⌘F.** `$M $P key cmd+f`. `wait-title "got f"`; `exists mako.omnibox` exits 4.
+- **Mako keeps ⌘T.** `$M $P key cmd+t`. `$M $P tree | grep mako.omnibox.field` shows `desc="New trail`, and `title` is still `got f`, not `got t`. `key escape`.
+- **Mako keeps ⌘L and ⇧⌘T.** `key cmd+l`: the field's `desc` starts `This page`; `key escape`. `key cmd+shift+t` (nothing to reopen, so Mako beeps): `title` is unchanged.
+- **Proof.** `title` and `tree | grep mako.omnibox` after each step to `$E/keys.txt`.
 
 ## Gotchas
 

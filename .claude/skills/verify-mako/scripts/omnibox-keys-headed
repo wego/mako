@@ -1,0 +1,52 @@
+#!/bin/bash
+# The address bar with real keys: Return loads into this page; Option-Return opens the
+# address beside it (a sibling under the same parent, or a new trail right after a root)
+# and selects it; neither leaves a newline in the field.
+# Still pages (fixtures/omnibox), so no page opens pages of its own.
+# Headed: takes keyboard focus, but sends no pointer events, so it also runs over a remote
+# session such as Jump Desktop. Warn the person first. Exit status = failures.
+set -u
+cd "$(dirname "$0")/../../../.."
+unset MAKO_BACKGROUND
+export MAKO_RUN="$PWD/verify-runs/omnibox-keys-headed"
+C=.claude/skills/verify-mako/scripts/control-mako; M=verify-runs/.bin/makoctl
+J="$MAKO_RUN/state/trails.json"
+fails=0; P=
+pass() { echo "PASS $1"; }
+fail() { echo "FAIL $1 ($(q '(s["roots"], s["active"], {k: v["children"] for k, v in n.items()})' 2>/dev/null))"; fails=$((fails + 1)); }
+check() { local name=$1; shift; if "$@" >/dev/null 2>&1; then pass "$name"; else fail "$name"; fi; }
+q() { python3 -c "import json; s=json.load(open('$J')); n=s['nodes']; print($1)"; }
+is() { test "$(q "$1")" = "$2"; }
+within() { for _ in $(seq 30); do "$@" >/dev/null 2>&1 && return 0; sleep 0.1; done; return 1; }
+# go <keys> <address>: ⌘L, type the address, then press <keys> (return or opt+return)
+go() { $M "$P" key cmd+l; sleep 0.3; $M "$P" type "$2"; $M "$P" key "$1"; sleep 1; }
+trap '$C stop >/dev/null 2>&1; kill $srv 2>/dev/null; wait $srv 2>/dev/null' EXIT
+
+$C stop >/dev/null 2>&1
+[ "${MAKO_SKIP_BUILD:-}" = 1 ] || $C build >/dev/null || { echo "FAIL build"; exit 99; }
+port=$((20000 + RANDOM % 20000))
+python3 -m http.server "$port" --bind 127.0.0.1 -d .claude/skills/verify-mako/fixtures/omnibox >/dev/null 2>&1 &
+srv=$!; sleep 1
+U="http://127.0.0.1:$port"
+out=$($C launch "" "$U/one.html" 2>&1) || { echo "FAIL launch: $out"; exit 99; }
+P=$($C pid); sleep 3
+
+echo "== Return replaces"
+go return "$U/two.html"
+check return-loads-into-this-page within is '(s["roots"], len(n), n["1"]["url"].endswith("/two.html"))' "([1], 1, True)"
+
+echo "== Option-Return beside a root"
+go opt+return "$U/three.html"
+check opt-return-on-root-opens-trail-after-it within is '(s["roots"], s["active"])' "([1, 2], 2)"
+check opt-return-leaves-root-alone is 'n["1"]["url"].endswith("/two.html")' True
+check new-page-loads-the-address within sh -c "$M $P title | grep -q 'Page three'"
+
+echo "== Option-Return beside a page"
+$M "$P" menu File "New Page in Trail"; sleep 0.3
+$M "$P" set mako.omnibox.field "$U/four.html"; $M "$P" confirm mako.omnibox.field; sleep 1
+go opt+return "$U/five.html"
+check opt-return-on-page-opens-sibling-after-it within is '(n["2"]["children"], s["active"], n["4"]["parent"])' "([3, 4], 4, 2)"
+check no-newline-in-the-address is '"\n" in n["4"]["url"]' False
+
+echo "omnibox-keys-headed: $fails failed"
+exit "$fails"

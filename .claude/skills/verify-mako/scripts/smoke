@@ -10,13 +10,15 @@ S=.claude/skills/verify-mako/scripts
 fails=0
 summary=()
 
-# step <script>: runs it and adds its failures; 99 means it could not start (one failure).
+# step <script>: runs it and adds its failures; 99 means it could not start, 98 that pointer
+# events do not reach Mako (one failure each).
 step() {
   local name=$1 code
   echo "== $name"
   "$S/$name"; code=$?
   case $code in
     99) summary+=("SUMMARY $name could not start"); fails=$((fails + 1)) ;;
+    98) summary+=("SUMMARY $name pointer events don't reach Mako: run at the Mac"); fails=$((fails + 1)) ;;
     100) summary+=("SUMMARY $name skipped (machine busy)") ;;
     *) summary+=("SUMMARY $name $code failure(s)"); fails=$((fails + code)) ;;
   esac

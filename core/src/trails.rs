@@ -66,6 +66,9 @@ pub enum Action {
     OpenChild { parent: Id, url: String, #[serde(default = "yes")] select: bool },
     /// The page in this node changed address or title in place (redirect, in-page navigation).
     Navigated { id: Id, url: String, title: String },
+    /// ⌥Enter in the address bar: a new page right after `of`, under the same parent. A root's
+    /// sibling is a new trail right after its trail.
+    OpenSibling { of: Id, url: String },
     Select { id: Id },
     /// Close a page and everything beneath it.
     Close { id: Id },
@@ -74,8 +77,11 @@ pub enum Action {
     SetCollapsed { id: Id, collapsed: bool },
     Rename { id: Id, name: Option<String> },
     /// Move a page, with everything beneath it, next to or inside another page (drag and drop).
+    /// Dropped among its own pages, it moves alone and leaves them behind. Dropped before its
+    /// own trail's root, it becomes that root.
     Place { id: Id, target: Id, place: Place },
     /// Move a page one step: among its siblings, under the page above, or out beside its parent.
+    /// Up from a trail's first page makes it the root, as a drop above the root does.
     Nudge { id: Id, direction: Direction },
     /// ⌘1…⌘9: go to a trail's root (0-based, in sidebar order); from the root, to its last page.
     Jump { trail: usize },
@@ -158,6 +164,20 @@ pub fn apply(state: &Trails, action: &Action, max_trails: usize) -> Result<Trail
                 s.active = was_active;
             }
         }
+        Action::OpenSibling { of, url } => {
+            let parent = s.nodes.get(of).ok_or(Error::NoSuchPage(*of))?.parent;
+            if parent.is_none() && s.roots.len() >= max_trails {
+                return Err(Error::TrailCap(max_trails));
+            }
+            let id = add(&mut s, parent, url);
+            let siblings = match parent {
+                Some(p) => &mut s.nodes.get_mut(&p).unwrap().children,
+                None => &mut s.roots,
+            };
+            let at = siblings.iter().position(|c| c == of).unwrap() + 1;
+            siblings.insert(at, id);
+            reveal(&mut s, id);
+        }
         Action::Navigated { id, url, title } => {
             let n = s.nodes.get_mut(id).ok_or(Error::NoSuchPage(*id))?;
             n.url = url.clone();
@@ -209,12 +229,24 @@ pub fn apply(state: &Trails, action: &Action, max_trails: usize) -> Result<Trail
         Action::Place { id, target, place } => {
             has(&s, *id)?;
             has(&s, *target)?;
-            if subtree(&s, *id).contains(target) {
+            if id == target {
                 return Err(Error::IntoItself);
             }
-            let parent = if *place == Place::Inside { Some(*target) } else { s.nodes[target].parent };
+            if *place == Place::Before && trail_of(&s, *id) == *target {
+                crown(&mut s, *id);
+                paint(&mut s);
+                return Ok(s);
+            }
+            let first = subtree(&s, *id).contains(target).then(|| lift(&mut s, *id));
+            let beside_first = first == Some(*target);
+            if beside_first && *place == Place::Before {
+                return Ok(state.clone());
+            }
+            // Just after its first page, which now holds the rest: the top of that page's list.
+            let parent = if *place == Place::Inside || beside_first { Some(*target) } else { s.nodes[target].parent };
             relocate(&mut s, *id, parent, max_trails, |siblings| match place {
                 Place::Inside => siblings.len(),
+                _ if beside_first => 0,
                 _ => siblings.iter().position(|c| c == target).unwrap() + usize::from(*place == Place::After),
             })?;
         }
@@ -225,6 +257,7 @@ pub fn apply(state: &Trails, action: &Action, max_trails: usize) -> Result<Trail
             let at = siblings.iter().position(|c| c == id).unwrap();
             match direction {
                 Direction::Up if at > 0 => relocate(&mut s, *id, parent, max_trails, |_| at - 1)?,
+                Direction::Up if parent.is_some_and(|p| s.nodes[&p].parent.is_none()) => crown(&mut s, *id),
                 Direction::Down if at + 1 < siblings.len() => relocate(&mut s, *id, parent, max_trails, |_| at + 1)?,
                 Direction::In if at > 0 => relocate(&mut s, *id, Some(siblings[at - 1]), max_trails, |c| c.len())?,
                 Direction::Out => {
@@ -255,12 +288,17 @@ pub fn apply(state: &Trails, action: &Action, max_trails: usize) -> Result<Trail
 /// free slot, so no two open trails share a colour and none changes while it stays open.
 fn paint(s: &mut Trails) {
     s.colors.retain(|id, _| s.roots.contains(id));
-    for root in &s.roots {
-        if !s.colors.contains_key(root) {
-            let free = (0..=u8::MAX).find(|c| !s.colors.values().any(|v| v == c)).unwrap_or(0);
-            s.colors.insert(*root, free);
+    for root in s.roots.clone() {
+        if !s.colors.contains_key(&root) {
+            let free = next_color(s);
+            s.colors.insert(root, free);
         }
     }
+}
+
+/// The colour slot the next new trail gets: the lowest one no open trail holds.
+pub fn next_color(state: &Trails) -> u8 {
+    (0..=u8::MAX).find(|c| !state.colors.values().any(|v| v == c)).unwrap_or(0)
 }
 
 fn add(s: &mut Trails, parent: Option<Id>, url: &str) -> Id {
@@ -288,6 +326,55 @@ fn relocate(s: &mut Trails, id: Id, parent: Option<Id>, max_trails: usize, at: i
         reveal(s, active);
     }
     Ok(())
+}
+
+/// Takes `id` out from above its pages, which stay where they are: its first child takes
+/// its place, its trail colour and the rest of its children. Returns that child.
+fn lift(s: &mut Trails, id: Id) -> Id {
+    let mut rest = std::mem::take(&mut s.nodes.get_mut(&id).unwrap().children);
+    let first = rest.remove(0);
+    let parent = s.nodes[&id].parent;
+    let siblings = siblings_mut(s, parent);
+    let at = siblings.iter().position(|c| *c == id).unwrap();
+    siblings[at] = first;
+    for child in &rest {
+        s.nodes.get_mut(child).unwrap().parent = Some(first);
+    }
+    let node = s.nodes.get_mut(&first).unwrap();
+    node.parent = parent;
+    node.children.extend(rest);
+    if let Some(color) = s.colors.remove(&id) {
+        s.colors.insert(first, color);
+    }
+    first
+}
+
+/// Makes `id` the root of its trail: the old root, with the pages still beneath it, becomes
+/// its first page. The trail keeps its place among the trails and its colour.
+fn crown(s: &mut Trails, id: Id) {
+    let root = trail_of(s, id);
+    let parent = s.nodes[&id].parent;
+    siblings_mut(s, parent).retain(|c| *c != id);
+    let at = s.roots.iter().position(|r| *r == root).unwrap();
+    s.roots[at] = id;
+    s.nodes.get_mut(&root).unwrap().parent = Some(id);
+    let node = s.nodes.get_mut(&id).unwrap();
+    node.parent = None;
+    node.children.insert(0, root);
+    if let Some(color) = s.colors.remove(&root) {
+        s.colors.insert(id, color);
+    }
+    if let Some(active) = s.active {
+        reveal(s, active);
+    }
+}
+
+/// The root of the trail `id` is in.
+fn trail_of(s: &Trails, mut id: Id) -> Id {
+    while let Some(p) = s.nodes[&id].parent {
+        id = p;
+    }
+    id
 }
 
 /// The page reached by following the last child down from `id`: the end of the trail.
@@ -399,6 +486,34 @@ mod tests {
     /// a(1) > [b(2) > [d(4)], c(3)], e(5)
     fn sample() -> Trails {
         run(&Trails::default(), &[trail("a"), child(1, "b"), child(1, "c"), child(2, "d"), trail("e")])
+    }
+
+    fn sibling(of: Id, url: &str) -> Action { Action::OpenSibling { of, url: url.into() } }
+
+    #[test]
+    fn a_sibling_opens_right_after_its_page_under_the_same_parent() {
+        let s = run(&sample(), &[sibling(2, "x")]);
+        assert_eq!(shape(&s), [(0, "a".into()), (1, "b".into()), (2, "d".into()), (1, "x".into()), (1, "c".into()), (0, "e".into())]);
+        assert_eq!(s.nodes[&6].parent, Some(1));
+        assert_eq!(s.active, Some(6), "the new page is selected");
+    }
+
+    #[test]
+    fn a_sibling_inside_a_collapsed_page_is_revealed() {
+        // d(4) sits under b(2); collapse b, then open a sibling of d.
+        let s = run(&sample(), &[Action::SetCollapsed { id: 2, collapsed: true }, sibling(4, "x")]);
+        assert_eq!(s.active, Some(6));
+        assert!(rows(&s).iter().any(|r| r.id == 6), "the selected new page has a row");
+    }
+
+    #[test]
+    fn a_roots_sibling_is_a_new_trail_right_after_it() {
+        let s = apply(&sample(), &sibling(1, "x"), 3).unwrap();
+        assert_eq!(s.roots, [1, 6, 5]);
+        assert_eq!(s.active, Some(6));
+        assert!(s.colors.contains_key(&6), "a new trail gets its colour");
+        assert_eq!(apply(&sample(), &sibling(1, "x"), 2), Err(Error::TrailCap(2)));
+        assert_eq!(apply(&sample(), &sibling(9, "x"), 3), Err(Error::NoSuchPage(9)));
     }
 
     #[test]
@@ -546,7 +661,6 @@ mod tests {
     #[test]
     fn moves_that_would_break_the_tree_are_refused() {
         let s = sample();
-        assert_eq!(apply(&s, &place(1, 4, Place::Inside), 2), Err(Error::IntoItself), "under its own descendant");
         assert_eq!(apply(&s, &place(2, 2, Place::Before), 2), Err(Error::IntoItself));
         assert_eq!(apply(&s, &place(3, 5, Place::Before), 2), Err(Error::TrailCap(2)), "a third trail");
         assert!(apply(&s, &place(5, 1, Place::Before), 2).is_ok(), "reordering trails is not a new trail");
@@ -627,6 +741,59 @@ mod tests {
         assert_eq!(a, jump(0));
     }
 
+    #[test]
+    fn a_page_dropped_among_its_own_pages_leaves_them_behind() {
+        // sample: a(1) > [b(2) > [d(4)], c(3)], e(5). The first page beneath takes its place
+        // and keeps the rest, as Tree Style Tab does for a closed parent.
+        let s = apply(&sample(), &place(1, 3, Place::After), 2).unwrap();
+        assert_eq!(shape(&s), [(0, "b".into()), (1, "d".into()), (1, "c".into()), (1, "a".into()), (0, "e".into())]);
+        assert_eq!(colors(&s), [(2, 0), (4, 0), (3, 0), (1, 0), (5, 1)], "the trail keeps its colour");
+        let s = run(&sample(), &[place(1, 4, Place::Inside)]);
+        assert_eq!(shape(&s), [(0, "b".into()), (1, "d".into()), (2, "a".into()), (1, "c".into()), (0, "e".into())]);
+        assert_eq!(load(&save(&s)).unwrap(), s, "still a well-formed tree");
+    }
+
+    #[test]
+    fn a_page_dropped_beside_its_first_page_swaps_places_with_it() {
+        let s = apply(&sample(), &place(1, 2, Place::After), 2).unwrap();
+        assert_eq!(shape(&s), [(0, "b".into()), (1, "a".into()), (1, "d".into()), (1, "c".into()), (0, "e".into())]);
+        assert_eq!(s.roots, [2, 5], "no new trail");
+        assert_eq!(run(&sample(), &[place(1, 2, Place::Before)]), sample(), "already there");
+        let s = run(&sample(), &[place(2, 4, Place::After)]);
+        assert_eq!(shape(&s), [(0, "a".into()), (1, "d".into()), (2, "b".into()), (1, "c".into()), (0, "e".into())], "not just roots");
+    }
+
+    #[test]
+    fn a_page_dropped_above_its_own_root_becomes_that_root() {
+        // sample: a(1) > [b(2) > [d(4)], c(3)], e(5). The old root, with the pages still
+        // beneath it, becomes the new root's first page.
+        let s = apply(&sample(), &place(4, 1, Place::Before), 2).unwrap();
+        assert_eq!(shape(&s), [(0, "d".into()), (1, "a".into()), (2, "b".into()), (2, "c".into()), (0, "e".into())]);
+        assert_eq!(s.roots, [4, 5], "same trail, same slot: allowed at the cap");
+        assert_eq!(colors(&s), [(4, 0), (1, 0), (2, 0), (3, 0), (5, 1)], "the trail keeps its colour");
+        assert_eq!(load(&save(&s)).unwrap(), s, "still a well-formed tree");
+        let s = run(&sample(), &[place(2, 1, Place::Before)]);
+        assert_eq!(shape(&s), [(0, "b".into()), (1, "a".into()), (2, "c".into()), (1, "d".into()), (0, "e".into())], "its own pages come along");
+        let s = run(&sample(), &[place(4, 5, Place::Before)]);
+        assert_eq!(s.roots, [1, 4, 5], "above another trail's root: a new trail");
+        assert_eq!(apply(&sample(), &place(4, 5, Place::Before), 2), Err(Error::TrailCap(2)));
+    }
+
+    #[test]
+    fn move_up_on_a_trails_first_page_makes_it_the_root() {
+        // sample: a(1) > [b(2) > [d(4)], c(3)], e(5)
+        assert_eq!(apply(&sample(), &nudge(2, Direction::Up), 2), Ok(run(&sample(), &[place(2, 1, Place::Before)])));
+        assert_eq!(run(&sample(), &[nudge(4, Direction::Up)]), sample(), "first page of a page, not of a trail: unchanged");
+    }
+
+    #[test]
+    fn the_move_items_treat_a_root_like_any_page() {
+        let s = run(&sample(), &[nudge(5, Direction::In)]);
+        assert_eq!((s.roots.clone(), s.nodes[&1].children.clone()), (vec![1], vec![2, 3, 5]), "indent: last page of the trail above");
+        assert_eq!(run(&sample(), &[nudge(1, Direction::Out)]), sample(), "a root has nowhere to outdent to");
+        assert!(apply(&s, &trail("f"), 2).is_ok(), "indenting a trail frees its slot");
+    }
+
     fn colors(s: &Trails) -> Vec<(Id, u8)> { rows(s).into_iter().map(|r| (r.id, r.color)).collect() }
 
     #[test]
@@ -635,6 +802,14 @@ mod tests {
         assert_eq!(colors(&sample()), [(1, 0), (2, 0), (4, 0), (3, 0), (5, 1)]);
         let s = run(&sample(), &[Action::Close { id: 1 }, trail("f")]);
         assert_eq!(colors(&s), [(5, 1), (6, 0)], "a closed trail frees its colour for the next one");
+    }
+
+    #[test]
+    fn next_color_is_the_colour_a_new_trail_gets() {
+        for s in [Trails::default(), sample(), run(&sample(), &[Action::Close { id: 1 }])] {
+            let opened = run(&s, &[trail("n")]);
+            assert_eq!(Some(next_color(&s)), opened.colors.get(&opened.roots[opened.roots.len() - 1]).copied());
+        }
     }
 
     #[test]

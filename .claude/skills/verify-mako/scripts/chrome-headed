@@ -19,6 +19,7 @@ trap '$C stop >/dev/null 2>&1; kill $srv 2>/dev/null; wait $srv 2>/dev/null' EXI
 
 $C stop >/dev/null 2>&1
 [ "${MAKO_SKIP_BUILD:-}" = 1 ] || $C build >/dev/null || { echo "FAIL build"; exit 99; }
+.claude/skills/verify-mako/scripts/pointer-check || exit $?
 port=$((20000 + RANDOM % 20000))
 python3 -m http.server "$port" --bind 127.0.0.1 -d .claude/skills/verify-mako/fixtures/chrome >/dev/null 2>&1 &
 srv=$!; sleep 1
@@ -54,7 +55,9 @@ check divider-edge-follows-pointer test "$($M "$P" value mako.divider)" = 240
 
 echo "== sidebar hidden (⌃⌘S)"
 $M "$P" key ctrl+cmd+s
-check key-hides-sidebar within sh -c "! $M $P exists mako.sidebar"
+if within sh -c "! $M $P exists mako.sidebar"; then pass key-hides-sidebar; else
+  fail "key-hides-sidebar (the hidden-sidebar checks need it; not run)"; echo "chrome-headed: $fails failed"; exit "$fails"
+fi
 read -r wx wy ww wh <<<"$($M "$P" window-frame)"
 $M "$P" drag $((ww / 2)) 3 30 20; sleep 0.4
 check drag-top-strip-moves-window moved "$wx" "$wy" 30 20
