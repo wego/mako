@@ -59,6 +59,13 @@ check page-fills-window test "$($M "$P" frame mako.page | cut -d' ' -f1)" = "$wx
 check traffic-lights-hidden sh -c "! $M $P tree 3 | grep -q AXCloseButton"
 check menu-offers-show sh -c "$M $P menu-items View | grep -qx '  Show Sidebar'"
 check trails-menu-still-navigates sh -c "$M $P menu-items Trails | grep -q 'Top'"
+$M "$P" menu Trails "Rename Page…"
+check rename-shows-hidden-sidebar within $M "$P" exists mako.sidebar
+check rename-field-visible within $M "$P" frame mako.trail.1.name
+$M "$P" set mako.trail.1.name "Renamed"; $M "$P" confirm mako.trail.1.name; sleep 0.4
+check rename-from-hidden-saves sh -c "python3 -c \"import json,sys; s=json.load(open('$MAKO_RUN/state/trails.json')); sys.exit(s['nodes']['1']['name'] != 'Renamed')\""
+$M "$P" menu View "Hide Sidebar"
+within sh -c "! $M $P exists mako.sidebar"
 $M "$P" shot "$MAKO_RUN/hidden.png" >/dev/null 2>&1
 check page-painted-full-width painted "$MAKO_RUN/hidden.png"
 
