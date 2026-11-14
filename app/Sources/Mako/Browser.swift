@@ -614,7 +614,13 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         guard let id = store.active?.id else { return }
         if apply("nudge", ["id": id, "direction": direction]) != nil { NSSound.beep() }
     }
-    @objc func renamePage(_: Any?) { if let id = store.active?.id { sidebar.beginRename(id) } }
+    /// The name is edited in its sidebar row, so a hidden sidebar comes back for it.
+    @objc func renamePage(_: Any?) {
+        guard let id = store.active?.id else { return }
+        if sidebarState == .hidden { setSidebar(.shown) }
+        window.contentView?.layoutSubtreeIfNeeded()
+        sidebar.beginRename(id)
+    }
 
     @objc func selectMenuRow(_ sender: NSMenuItem) { select(UInt64(sender.tag)) }
     /// A trail's root, or from the root the trail's last page; the rule is the core's.
