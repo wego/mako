@@ -14,7 +14,7 @@ stop() { pkill -f "$exe" 2>/dev/null; sleep 0.5; }
 title() { python3 -c "import json,sys; s=json.load(open(sys.argv[1])); print(s['nodes'][str(s['active'])]['title'])" "$run/state/trails.json"; }
 trap 'stop; kill $srv 2>/dev/null; wait $srv 2>/dev/null' EXIT
 
-script/bundle >/dev/null || { echo "FAIL build"; exit 99; }
+[ "${MAKO_SKIP_BUILD:-}" = 1 ] || script/bundle >/dev/null || { echo "FAIL build"; exit 99; }
 stop; rm -rf "$run/app"; mkdir -p "$run/app" "$run/evidence"
 cp -R build/Mako.app "$app"
 /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier com.wego.mako.verify.dialogs-bg" -c "Delete :CFBundleURLTypes" "$app/Contents/Info.plist"

@@ -1,6 +1,7 @@
 #!/bin/bash
 # Drives the trails UI through accessibility actions without taking focus: sidebar
-# rows, collapse, the omnibox, the trail cap, close, Undo Close (also after a restart).
+# rows, collapse, the omnibox, the trail cap, live config edits, close, Undo Close (also
+# after a restart).
 # Needs Accessibility permission for the terminal; no keys are sent, so it is safe to
 # run while the Mac is in use. Prints PASS/FAIL per check; exit status = failures.
 set -u
@@ -15,12 +16,14 @@ check() { local name=$1; shift; if "$@" >/dev/null 2>&1; then pass "$name"; else
 # q <python expression over s>: reads the saved state
 q() { python3 -c "import json; s=json.load(open('$J')); n=s['nodes']; print($1)"; }
 is() { test "$(q "$1")" = "$2"; }
+# within <command...>: polls for up to 2 s
+within() { for _ in $(seq 20); do "$@" >/dev/null 2>&1 && return 0; sleep 0.1; done; return 1; }
 front() { osascript -e 'tell application "System Events" to get name of first process whose frontmost is true' 2>/dev/null; }
 omni() { $M "$P" menu File "$1"; sleep 0.3; $M "$P" set mako.omnibox.field "$2"; $M "$P" confirm mako.omnibox.field; sleep "${3:-2}"; }
 trap '$C stop >/dev/null 2>&1; kill $srv 2>/dev/null; wait $srv 2>/dev/null' EXIT
 
 $C stop >/dev/null 2>&1
-$C build >/dev/null || { echo "FAIL build"; exit 99; }
+[ "${MAKO_SKIP_BUILD:-}" = 1 ] || $C build >/dev/null || { echo "FAIL build"; exit 99; }
 mkdir -p "$E"
 port=$((20000 + RANDOM % 20000))
 python3 -m http.server "$port" --bind 127.0.0.1 -d .claude/skills/verify-mako/fixtures/trails >/dev/null 2>&1 &
@@ -76,6 +79,21 @@ $M "$P" set mako.settings.maxTrails 2; $M "$P" confirm mako.settings.maxTrails; 
 check settings-writes-config grep -qx 'max_trails = 2' "$CF"
 check settings-keeps-other-lines grep -qx 'block x.com' "$CF"
 check default-config-has-no-max-tabs sh -c "! grep -q max_tabs '$CF'"
+$M "$P" set mako.settings.maxTrails 1; $M "$P" confirm mako.settings.maxTrails
+check settings-cap-redraws-load-note within sh -c "test \"\$($M $P value mako.sidebar.load)\" = '🧠 1/1'"
+$M "$P" set mako.settings.maxTrails 2; $M "$P" confirm mako.settings.maxTrails
+check settings-cap-hides-load-note within sh -c "! $M $P exists mako.sidebar.load"
+
+echo "== live config edits"
+cp "$CF" "$E/config.good"
+{ cat "$E/config.good"; echo 'colour = red'; } > "$CF.new"; mv "$CF.new" "$CF"
+check saved-edit-shows-config-note within $M "$P" exists mako.sidebar.config
+cp "$E/config.good" "$CF.new"; mv "$CF.new" "$CF"
+check saved-fix-hides-config-note within sh -c "! $M $P exists mako.sidebar.config"
+echo 'colour = red' >> "$CF"
+check in-place-edit-shows-config-note within $M "$P" exists mako.sidebar.config
+cat "$E/config.good" > "$CF"
+check in-place-fix-hides-config-note within sh -c "! $M $P exists mako.sidebar.config"
 
 echo "== omnibox"
 check load-hidden-below-cap sh -c "! $M $P exists mako.sidebar.load"

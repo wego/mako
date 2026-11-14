@@ -1,11 +1,11 @@
 # Page shortcuts
 
-Mako's own shortcuts (⌘T ⌘W ⌘L ⌘. ⌘, ⌘1–9 ⌥⌘C) always reach Mako, even when a page has focus. The match is exact: ⌘⇧T or ⌘⇧1 go to the page first. Every other ⌘ key (⌘Z, ⌘C, ⌘V, ⌘R, ⌘[, ⌘]) goes to the web page first, so web apps such as Google Docs keep their own undo.
+Mako's own shortcuts always reach Mako, even when a page has focus and claims the key: ⌘T, ⌥⌘T, ⇧⌘T, ⌘W, ⌘L, ⌘,, ⌘., ⌥⌘C, ⌘1–⌘9, and ⌃Tab / ⌃⇧Tab. The match is exact: ⌘⇧1 or ⌃⌘T is not Mako's and goes to the page first. Every other ⌘ key (⌘Z, ⌘C, ⌘V, ⌘R, ⌘F, ⌘G, ⌘[, ⌘], ⌘=, ⌘-, ⌘0) goes to the web page first and reaches Mako's menu only if the page lets it pass, so web apps such as Google Docs keep their own undo and find.
 
 ## Sub-features
 
-- `keys-mako` Mako shortcuts work while a page has focus.
-- `keys-page` a page that handles ⌘Z receives it and Mako's menu does not act.
+- `keys-mako` Mako's shortcuts work while a page has focus, even one that calls `preventDefault` on every ⌘ key.
+- `keys-page` a page that handles ⌘Z, ⌘R or ⌘F receives it and Mako's menu does not act.
 
 ## How to get to it (user POV)
 
@@ -13,7 +13,7 @@ Mako's own shortcuts (⌘T ⌘W ⌘L ⌘. ⌘, ⌘1–9 ⌥⌘C) always reach Ma
 
 ## Driving it with makoctl
 
-Preconditions: launch with a probe page that claims every ⌘ key:
+Every step needs focus (real key presses), so run it headed. Launch with a probe page that claims every ⌘ key and titles itself with the key it got:
 
 ```sh
 PROBE="data:text/html,<title>probe</title><script>addEventListener('keydown',e=>{if(e.metaKey){e.preventDefault();document.title='got '+e.key}})</script><body contenteditable>edit</body>"
@@ -21,10 +21,13 @@ $C launch "" "$PROBE"
 ```
 
 - **Page receives ⌘Z.** `$M $P key cmd+z`. `wait-title "got z"`.
-- **Page receives ⌘R.** `$M $P key cmd+r`. `wait-title "got r"` (page handled it; no reload).
-- **Mako keeps ⌘T.** `$M $P key cmd+t`. Title ends `– 2/2` even though the page calls `preventDefault` on every ⌘ key.
-- **Proof.** `title` output after each step to `$E/keys.txt`.
+- **Page receives ⌘R.** `$M $P key cmd+r`. `wait-title "got r"` (the page handled it; no reload).
+- **Page receives ⌘F.** `$M $P key cmd+f`. `wait-title "got f"`; `value mako.omnibox.status` does not say `Finds in this page`.
+- **Mako keeps ⌘T.** `$M $P key cmd+t`. `value mako.omnibox.status` says `Starts a new trail` and `1 trail, 1 page`, and `title` is still `got f`, not `got t`. `key escape`.
+- **Mako keeps ⌘L and ⇧⌘T.** `key cmd+l`: the status says `Loads in this page`; `key escape`. `key cmd+shift+t` (nothing to reopen, so Mako beeps): `title` is unchanged.
+- **Proof.** `title` and `value mako.omnibox.status` after each step to `$E/keys.txt`.
 
 ## Gotchas
 
-- Without a page that calls `preventDefault`, ⌘R reloads via Mako's menu after the page passes on it; that is the expected fallback.
+- Without a page that calls `preventDefault`, ⌘R reloads through Mako's menu after the page passes on it; that is the expected fallback.
+- No script covers this file; it needs the keyboard.

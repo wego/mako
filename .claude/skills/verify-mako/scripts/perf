@@ -3,33 +3,41 @@
 # measured median; exit status is the number of budgets missed (100 = skipped).
 #
 # Primary numbers come from inside Mako (MAKO_PERF=1, set by control-mako):
-# time from the input event until the main thread next idles, and process start
-# to first page loaded. Those are what a user feels. Tab actions are driven with
-# key + wait-title (50ms polls): makoctl time-key polls Mako's AX title every 5ms,
-# which keeps Mako's main thread busy and inflates the in-app numbers it measures.
+# process start until the main thread first idles, process start to first page
+# loaded, and for ⌘T (New Trail) and ⌘1 (jump to the first trail) the time from
+# the key event until the main thread next idles. Those are what a user feels.
+# Mako times an action from the event that triggered it (NSApp.currentEvent), so
+# only a real key press gives a meaningful ⌘T or ⌘1 number: with MAKO_BACKGROUND=1
+# the run builds the same trails through the menu and AX, takes no focus, and
+# skips those two budgets. Waits poll at 50 ms; makoctl time-key polls Mako's AX
+# title every 5 ms, which keeps Mako's main thread busy and inflates the in-app
+# numbers it measures.
 #
 # Uses local data: pages so network speed never moves the numbers. Budgets sit
 # ~1.5x above measured medians; a miss is a regression, not noise. Tighten them
 # when things get faster. PERF_N (default 8) sets the number of fresh launches.
-# Tab budgets assume standard pointer colours: a custom-coloured pointer
+# Key budgets assume standard pointer colours: a custom-coloured pointer
 # (Accessibility > Display > Pointer) re-renders the cursor with a blur on every
-# view change and adds ~10ms to new tab and ~5ms to switch.
+# view change, which added ~10ms to a new tab and ~5ms to a tab switch.
 set -u
 cd "$(dirname "$0")/../../../.."
 C=.claude/skills/verify-mako/scripts/control-mako
 M=verify-runs/.bin/makoctl
 E=${MAKO_RUN:-verify-runs/latest}/evidence
 N=${PERF_N:-8}
+bg=${MAKO_BACKGROUND:-}
 fails=0
 
+# The medians below were measured on the tabs build (2026-10-04); the ⌘T and ⌘1
+# budgets carry over the new tab and tab switch budgets. Re-measure on trails.
 APP_INTERACTIVE_MS=420 # in-app: process start to main thread idle after launch (median ~285)
-APP_LAUNCH_MS=520     # in-app: process start to first page loaded, incl. WebKit start-up (median ~350)
-APP_NEW_TAB_MS=40     # in-app: cmd+T event until main thread idle (median ~27)
-APP_SWITCH_MS=12      # in-app: cmd+1 event until main thread idle (median ~7)
-E2E_LAUNCH_MS=900     # backstop: launch command to title visible via AX
-RSS_MB=170            # app process resident memory with 3 tabs loaded
-BUNDLE_MB=5           # build/Mako.app on disk
-CORE_US=200           # enforced inside the Rust test itself
+APP_LAUNCH_MS=520      # in-app: process start to first page loaded, incl. WebKit start-up (median ~350)
+APP_NEW_TRAIL_MS=40    # in-app: ⌘T event until main thread idle, omnibox up (new tab median ~27)
+APP_JUMP_MS=12         # in-app: ⌘1 event until main thread idle, first trail shown (tab switch median ~7)
+E2E_LAUNCH_MS=900      # backstop: launch command to title visible via AX
+RSS_MB=170             # app process resident memory with 3 trails loaded
+BUNDLE_MB=5            # build/Mako.app on disk
+CORE_US=200            # enforced inside the Rust test itself
 
 now_ms() { python3 -c 'import time; print(int(time.time() * 1000))'; }
 median() { sort -n | awk '{a[NR]=$1} END {print a[int((NR + 1) / 2)]}'; }
@@ -57,6 +65,15 @@ logpid=$!
 sleep 1
 
 page() { echo "data:text/html,<title>$1</title><h1>$1</h1>"; }
+# new_trail <counts> <title>: ⌘T (File → New Trail in the background), then the page's
+# address through AX once the omnibox is up, which is when its status line shows the
+# trail and page counts <counts>.
+new_trail() {
+  if [ "$bg" = 1 ]; then $M "$P" menu File "New Trail"; else $M "$P" key cmd+t; fi
+  for _ in $(seq 100); do $M "$P" value mako.omnibox.status 2>/dev/null | grep -q "$1" && break; sleep 0.05; done
+  $M "$P" set mako.omnibox.field "$(page "$2")"; $M "$P" confirm mako.omnibox.field
+  $M "$P" wait-title "$2" 5 >/dev/null
+}
 launches=() rss=0
 for i in $(seq 1 "$N"); do
   $C stop >/dev/null 2>&1
@@ -65,15 +82,14 @@ for i in $(seq 1 "$N"); do
   P=$($C pid)
   $M "$P" wait-title first 10 >/dev/null || { echo "FAIL first page never rendered"; exit 99; }
   launches+=($(($(now_ms) - t0)))
-  "$M" "$P" pointer-center
+  [ "$bg" = 1 ] || "$M" "$P" pointer-center
   sleep 0.3
-  $M "$P" key cmd+t; $M "$P" wait-title "New Tab – 2/2" 5 >/dev/null
-  $M "$P" key escape
+  new_trail "1 trail, 1 page" second
   sleep 0.3
-  $M "$P" key cmd+1; $M "$P" wait-title "first – 1/2" 5 >/dev/null
+  if [ "$bg" = 1 ]; then $M "$P" menu Trails first; else $M "$P" key cmd+1; fi
+  $M "$P" wait-title first 5 >/dev/null
   if [ "$i" = "$N" ]; then
-    $M "$P" key cmd+2; $M "$P" key cmd+l; $M "$P" type "$(page second)"; $M "$P" key return; $M "$P" wait-title second 5 >/dev/null
-    $M "$P" key cmd+t; $M "$P" key cmd+l; $M "$P" type "$(page third)"; $M "$P" key return; $M "$P" wait-title third 5 >/dev/null
+    new_trail "2 trails, 2 pages" third
     sleep 1
     rss=$(($(ps -o rss= -p "$P") / 1024))
   fi
@@ -85,17 +101,22 @@ kill "$logpid" 2>/dev/null; wait "$logpid" 2>/dev/null; logpid=
 app_ms() { grep -oE "perf $1 [0-9]+us" "$applog" | grep -oE '[0-9]+us' | tr -d us | median | awk '{printf "%.1f", $1 / 1000}'; }
 app_interactive=$(app_ms launchToInteractive)
 app_launch=$(app_ms launchToFirstPage)
-app_new_tab=$(app_ms newTab)
-app_switch=$(app_ms selectTab)
+app_new_trail=$(app_ms newTrail)
+app_jump=$(app_ms jumpToTrail)
 e2e_launch=$(printf '%s\n' "${launches[@]}" | median)
 bundle=$(( ($(du -sk build/Mako.app | cut -f1) + 1023) / 1024 ))
 
 budget app-launch-to-interactive "$app_interactive" $APP_INTERACTIVE_MS ms
 budget app-launch-to-first-page "$app_launch" $APP_LAUNCH_MS ms
-budget app-new-tab "$app_new_tab" $APP_NEW_TAB_MS ms
-budget app-tab-switch "$app_switch" $APP_SWITCH_MS ms
+if [ "$bg" = 1 ]; then
+  echo "SKIP app-new-trail, app-jump: they time a real key press, which MAKO_BACKGROUND=1 does not send"
+  app_new_trail= app_jump=
+else
+  budget app-new-trail "$app_new_trail" $APP_NEW_TRAIL_MS ms
+  budget app-jump "$app_jump" $APP_JUMP_MS ms
+fi
 budget e2e-launch "$e2e_launch" $E2E_LAUNCH_MS ms
-budget memory-3-tabs "$rss" $RSS_MB MB
+budget memory-3-trails "$rss" $RSS_MB MB
 budget bundle-size "$bundle" $BUNDLE_MB MB
 if out=$(cargo test --release -q --manifest-path core/Cargo.toml -- --ignored --nocapture perf_budget 2>&1); then
   echo "PASS core $(echo "$out" | grep -o 'parse+check: [^ ]*') per navigation (budget ${CORE_US}µs)"
@@ -103,7 +124,8 @@ else
   echo "FAIL core: $(echo "$out" | grep -o 'parse+check took .*' | head -1)"; fails=$((fails + 1))
 fi
 
-printf 'n=%s app_interactive=%s app_launch=%s app_new_tab=%s app_switch=%s e2e_launch=%s rss_mb=%s bundle_mb=%s\n' \
-  "$N" "$app_interactive" "$app_launch" "$app_new_tab" "$app_switch" "$e2e_launch" "$rss" "$bundle" >>"$E/perf.log"
+printf 'n=%s app_interactive=%s app_launch=%s app_new_trail=%s app_jump=%s e2e_launch=%s rss_mb=%s bundle_mb=%s mode=%s\n' \
+  "$N" "$app_interactive" "$app_launch" "$app_new_trail" "$app_jump" "$e2e_launch" "$rss" "$bundle" \
+  "$([ "$bg" = 1 ] && echo background || echo foreground)" >>"$E/perf.log"
 echo "== $fails budget(s) missed; history in $E/perf.log"
 exit "$fails"

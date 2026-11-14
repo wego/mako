@@ -1,0 +1,38 @@
+#!/bin/bash
+# Proves a verification run shares no website data with another run or with the daily
+# Mako: storage one run sets is invisible to a second run, and the daily Mako's cookie
+# and WebKit files are unchanged. Accessibility actions only, no focus.
+# Prints PASS/FAIL per check; exit status is the number of failures.
+set -u
+cd "$(dirname "$0")/../../../.."
+export MAKO_BACKGROUND=1 MAKO_RUN="$PWD/verify-runs/isolation-ax"
+C=.claude/skills/verify-mako/scripts/control-mako; M=verify-runs/.bin/makoctl
+other="$PWD/verify-runs/isolation-ax-other"
+fails=0; srv=
+check() { local name=$1; shift; if "$@" >/dev/null 2>&1; then echo "PASS $name"; else echo "FAIL $name"; fails=$((fails + 1)); fi; }
+daily() { stat -f "%m %z" "$HOME/Library/HTTPStorages/com.wego.mako.binarycookies" "$HOME/Library/WebKit/com.wego.mako" 2>/dev/null | tr '\n' ' '; }
+trap '$C stop >/dev/null 2>&1; MAKO_RUN="$other" $C stop >/dev/null 2>&1; rm -rf "$other"; [ -n "$srv" ] && kill $srv 2>/dev/null; wait $srv 2>/dev/null' EXIT
+
+before=$(daily)
+$C stop >/dev/null 2>&1
+[ "${MAKO_SKIP_BUILD:-}" = 1 ] || $C build >/dev/null || { echo "FAIL build"; exit 99; }
+port=$((20000 + RANDOM % 20000)); U="http://127.0.0.1:$port"
+python3 -m http.server "$port" --bind 127.0.0.1 -d .claude/skills/verify-mako/fixtures >/dev/null 2>&1 &
+srv=$!; sleep 1
+
+$C launch "" "$U/storage.html" >/dev/null || { echo "FAIL launch"; exit 99; }
+P=$($C pid)
+check run-starts-empty $M "$P" wait-title "cookie=no local=no" 8
+# The title updates before the page's AX tree holds the button, so a press right away finds nothing.
+for _ in $(seq 25); do $M "$P" press "Set storage" >/dev/null 2>&1 && break; sleep 0.2; done
+check storage-set-in-run $M "$P" wait-title "cookie=yes local=yes" 3
+MAKO_RUN="$other" $C launch "" "$U/storage.html" >/dev/null || { echo "FAIL launch of the second run"; exit 99; }
+check other-run-cannot-see $M "$(MAKO_RUN="$other" $C pid)" wait-title "cookie=no local=no" 8
+# The daily Mako writes its own cookies while it runs, so only a closed one proves a run never touched them.
+if pgrep -f "/Applications/Mako.app/Contents/MacOS/Mako" >/dev/null; then
+  echo "SKIP daily-untouched (the daily Mako is running and writes its own data)"
+else
+  check daily-untouched test "$before" = "$(daily)"
+fi
+echo "== $fails failure(s)"
+exit "$fails"

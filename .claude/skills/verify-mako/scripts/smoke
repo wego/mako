@@ -1,217 +1,40 @@
 #!/bin/bash
-# Runs every features/*.md recipe against a fresh isolated Mako and prints one
-# PASS/FAIL line per check. Exit status is the number of failures (0 = all pass).
-# Takes focus for ~2 minutes. Evidence: $MAKO_RUN/evidence (default verify-runs/latest).
+# The full pass: builds once, then runs every check script and perf in turn. The
+# background scripts and perf take no focus. SMOKE_HEADED=1 adds ux-headed and
+# settings-headed, which take the keyboard and pointer, and lets perf time real ⌘T
+# and ⌘1 presses. Prints each script's PASS/FAIL lines, then one SUMMARY line per
+# script. Exit status is the total number of failures (capped at 255).
 set -u
 cd "$(dirname "$0")/../../../.."
-C=.claude/skills/verify-mako/scripts/control-mako
-M=verify-runs/.bin/makoctl
-run=${MAKO_RUN:-verify-runs/latest}
-E=$run/evidence
+S=.claude/skills/verify-mako/scripts
 fails=0
-P=
+summary=()
 
-pass() { echo "PASS $1"; }
-fail() { echo "FAIL $1"; fails=$((fails + 1)); }
-check() { local name=$1; shift; if "$@" >/dev/null 2>&1; then pass "$name"; else fail "$name ($($M "$P" title 2>/dev/null))"; fi; }
-s() { sleep "${1:-0.4}"; }
-launch() {
-  $C stop >/dev/null 2>&1
-  local out
-  out=$($C launch "$@" 2>&1 && $C doctor 2>&1) || { fail "launch: $(echo "$out" | tail -1)"; exit 99; }
-  P=$($C pid)
+# step <script>: runs it and adds its failures; 99 means it could not start (one failure).
+step() {
+  local name=$1 code
+  echo "== $name"
+  "$S/$name"; code=$?
+  case $code in
+    99) summary+=("SUMMARY $name could not start"); fails=$((fails + 1)) ;;
+    100) summary+=("SUMMARY $name skipped (machine busy)") ;;
+    *) summary+=("SUMMARY $name $code failure(s)"); fails=$((fails + code)) ;;
+  esac
 }
-go() { $M "$P" key cmd+l; s 0.3; $M "$P" type "$1"; $M "$P" key return; }
-has_tree() { $M "$P" tree "${2:-8}" | grep -q "$1"; }
-trap '$C stop >/dev/null 2>&1' EXIT
-daily_stamp() { stat -f "%m %z" "$HOME/Library/HTTPStorages/com.wego.mako.binarycookies" "$HOME/Library/WebKit/com.wego.mako" 2>/dev/null | tr '\n' ' '; }
-daily_before=$(daily_stamp)
 
-.claude/skills/verify-mako/scripts/doc-check || fails=$((fails + $?))
-$C build >/dev/null || { echo "FAIL build"; exit 99; }
-mkdir -p "$E"
+step doc-check
+"$S/control-mako" build >/dev/null || { echo "FAIL build"; exit 99; }
+export MAKO_SKIP_BUILD=1
 
-echo "== omnibox"
-launch "" https://example.com
-check omni-start $M "$P" wait-title "Example Domain – 1/1" 8
-s  # a key sent the instant the first page lands can be dropped while launch finishes
-$M "$P" key cmd+l; s
-check omni-open-prefill test "$($M "$P" value mako.omnibox.field)" = "https://example.com/"
-check omni-status sh -c "$M $P value mako.omnibox.status | grep -q '1/3 tabs'"
-$M "$P" type zzz; $M "$P" key escape; s
-check omni-dismiss $M "$P" wait-title "Example Domain – 1/1" 2
-$M "$P" menu File "Open Location…"; s
-check omni-open-menu $M "$P" exists mako.omnibox.field
-$M "$P" key escape; s
-go "rust lifetimes"
-check omni-search $M "$P" wait-title "rust lifetimes" 8
-go example.com
-check omni-url $M "$P" wait-title "Example Domain" 8
-
-echo "== accessibility"
-$M "$P" tree 8 >"$E/ax-page.txt"
-check ax-web grep -q 'AXWebArea desc="Example Domain"' "$E/ax-page.txt"
-check ax-link grep -q 'AXLink title="Learn more"' "$E/ax-page.txt"
-$M "$P" key cmd+l; s
-$M "$P" tree 9 >"$E/ax-omnibox.txt"
-for id in mako.page mako.tab.1 mako.omnibox mako.omnibox.field mako.omnibox.status; do
-  check "ax-id $id" grep -q "id=\"$id\"" "$E/ax-omnibox.txt"
-done
-$M "$P" key escape; s
-check ax-no-systabs sh -c "! $M $P tree 4 | grep -q AXTabGroup"
-
-echo "== navigation"
-go iana.org
-check nav-load $M "$P" wait-title "Internet Assigned" 10
-$M "$P" key "cmd+["
-check nav-back $M "$P" wait-title "Example Domain" 8
-$M "$P" key "cmd+]"
-check nav-forward $M "$P" wait-title "Internet Assigned" 8
-$M "$P" menu History Back
-check nav-back-menu $M "$P" wait-title "Example Domain" 8
-$M "$P" shot "$E/zoom-1.png" >/dev/null; $M "$P" key "cmd+="; $M "$P" key "cmd+="; s 0.8; $M "$P" shot "$E/zoom-2.png" >/dev/null
-check nav-zoom-changes-pixels sh -c "! cmp -s $E/zoom-1.png $E/zoom-2.png"
-$M "$P" key cmd+0
-
-echo "== devtools"
-$M "$P" key cmd+opt+c; s 2.5
-check devtools-open test "$($M "$P" tree 12 | grep -c AXWebArea)" -ge 2
-$M "$P" shot "$E/console-open.png" >/dev/null
-$M "$P" type 'document.title="from console"'; $M "$P" key return
-check devtools-eval $M "$P" wait-title "from console" 4
-$M "$P" key cmd+opt+c; s 4
-check devtools-close test "$($M "$P" tree 12 | grep -c AXWebArea)" -eq 1
-
-echo "== tabs"
-$M "$P" key cmd+t; s
-check tab-new $M "$P" wait-title "New Tab – 2/2" 2
-check tab-blank-icon $M "$P" exists mako.blank
-$M "$P" shot "$E/tab-blank.png" >/dev/null
-$M "$P" key escape; s; $M "$P" menu File "New Tab"; s; $M "$P" key escape; s
-check tab-new-menu $M "$P" wait-title "New Tab – 3/3" 2
-$M "$P" key cmd+t; s
-check tab-cap sh -c "$M $P value mako.omnibox.status | grep -q 'Tab cap reached (3)'"
-check tab-cap-count $M "$P" wait-title "– 3/3" 1
-$M "$P" key escape; s; $M "$P" key cmd+1
-check tab-switch-key $M "$P" wait-title "– 1/3" 3
-check tab-menu-checked sh -c "$M $P menu-items Tabs | head -1 | grep -q '^\*'"
-$M "$P" menu Tabs "New Tab"; s
-check tab-switch-menu $M "$P" wait-title "New Tab – 2/3" 2
-for _ in 1 2 3; do $M "$P" key cmd+w; s; done
-check tab-close-to-last $M "$P" wait-title "New Tab – 1/1" 2
-check tab-last-blank $M "$P" exists mako.blank
-
-echo "== blocklist"
-log stream --level info --predicate 'subsystem == "com.wego.mako"' --style compact >"$E/block-log.txt" 2>&1 &
-logpid=$!; s 1
-go x.com
-check block-typed sh -c "sleep 2; $M $P tree 8 | grep -q 'x.com is blocked'"
-check block-title $M "$P" wait-title "Not now." 2
-$M "$P" shot "$E/block-page.png" >/dev/null
-go mobile.x.com
-check block-subdomain sh -c "sleep 2; $M $P tree 8 | grep -q 'x.com is blocked'"
-go example.com
-check block-allowed $M "$P" wait-title "Example Domain" 8
-embed="data:text/html,<title>embed</title><p>host page</p><iframe src='https://x.com/'></iframe><iframe src='https://www.iana.org/'></iframe>"
-go "$embed"
-check block-iframe-host-loads $M "$P" wait-title "embed" 15
-check block-iframe sh -c "sleep 1; grep -q 'block x.com (frame)' $E/block-log.txt"
-check block-iframe-allowed-frame sh -c "grep -q 'allow https://www.iana.org/' $E/block-log.txt"
-go example.com; $M "$P" wait-title "Example Domain" 8 >/dev/null
-echo 'block example.com' >>"$run/state/config"
-$M "$P" key cmd+r
-check block-live-edit sh -c "sleep 2; $M $P tree 8 | grep -q 'example.com is blocked'"
-kill "$logpid" 2>/dev/null; wait "$logpid" 2>/dev/null
-check block-log grep -q "block mobile.x.com" "$E/block-log.txt"
-
-echo "== popups (sign-in)"
-port=$((20000 + RANDOM % 20000))
-python3 -m http.server "$port" --bind 127.0.0.1 -d .claude/skills/verify-mako/fixtures >/dev/null 2>&1 &
-srv=$!; s 1
-go "http://127.0.0.1:$port/oauth-opener.html"
-check popup-fixture-loads $M "$P" wait-title "opener" 8
-$M "$P" press "Continue with Provider"
-check popup-opener-gets-token $M "$P" wait-title "signed in" 6
-check popup-closes sh -c "sleep 1; ! $M $P windows | grep -q mako.popup"
-check popup-not-a-tab $M "$P" wait-title "signed in – 1/1" 1
-$M "$P" press "plain target=_blank link"
-check blank-link-same-tab $M "$P" wait-title "provider – 1/1" 6
-
-echo "== isolation"
-go "http://127.0.0.1:$port/storage.html"
-check iso-run-starts-empty $M "$P" wait-title "cookie=no local=no" 8
-$M "$P" press "Set storage"
-check iso-set-in-run $M "$P" wait-title "cookie=yes local=yes" 3
-other="$run-other"
-if MAKO_RUN="$other" $C launch "" "http://127.0.0.1:$port/storage.html" >/dev/null; then
-  check iso-other-run-cannot-see $M "$(MAKO_RUN="$other" $C pid)" wait-title "cookie=no local=no" 8
-else fail "iso-other-run-launch"; fi
-MAKO_RUN="$other" $C stop >/dev/null; rm -rf "$other"
-# The user's own Mako legitimately writes its cookies while running, so only a closed
-# daily Mako can prove a run never touched its data.
-if pgrep -f "/Applications/Mako.app/Contents/MacOS/Mako" >/dev/null; then
-  echo "SKIP iso-daily-untouched (the daily Mako is running and writes its own data)"
+for name in trails-bg trails-ax dialogs-bg dialogs-ax isolation-ax; do step "$name"; done
+if [ "${SMOKE_HEADED:-}" = 1 ]; then
+  for name in ux-headed settings-headed; do step "$name"; done
+  MAKO_BACKGROUND= step perf
 else
-  check iso-daily-untouched test "$daily_before" = "$(daily_stamp)"
+  echo "== skipping ux-headed and settings-headed (they take the keyboard and pointer; SMOKE_HEADED=1 runs them)"
+  MAKO_BACKGROUND=1 step perf
 fi
-kill "$srv" 2>/dev/null; wait "$srv" 2>/dev/null
 
-echo "== about"
-version=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" build/Mako.app/Contents/Info.plist)
-$M "$P" menu Mako "About Mako" >/dev/null 2>&1; s 1
-$M "$P" tree 6 >"$E/about.txt"
-check about-panel-opens test "$($M "$P" windows | grep -c AXWindow)" -ge 2
-check about-shows-version grep -q "Version $version" "$E/about.txt"
-$M "$P" key "cmd+w"; s 0.5
-
-echo "== edit"
-go "data:text/html,<title>copytest</title><p>mako copy check 42</p>"; $M "$P" wait-title "copytest" 8 >/dev/null
-printf 'stale' | pbcopy
-$M "$P" key escape; $M "$P" key cmd+a; $M "$P" key cmd+c; s 1
-check edit-copy-survives kill -0 "$P"
-check edit-copy-to-clipboard sh -c "pbpaste | grep -q 'mako copy check 42'"
-$M "$P" key cmd+l; $M "$P" type "omnibox copy 7"; $M "$P" key cmd+a; $M "$P" key cmd+c; s 0.5
-check edit-omnibox-copy sh -c "pbpaste | grep -qx 'omnibox copy 7'"
-$M "$P" key escape
-
-echo "== page shortcuts"
-probe="data:text/html,<title>probe</title><script>addEventListener('keydown',e=>{if(e.metaKey){e.preventDefault();document.title='got '+e.key}})</script><body contenteditable>edit</body>"
-launch "" "$probe"
-$M "$P" wait-title probe 5 >/dev/null
-$M "$P" key cmd+z
-check keys-page-cmd-z $M "$P" wait-title "got z" 3
-$M "$P" key cmd+r
-check keys-page-cmd-r $M "$P" wait-title "got r" 3
-$M "$P" key cmd+t
-check keys-mako-cmd-t $M "$P" wait-title "– 2/2" 3
-
-echo "== session"
-launch "" https://example.com
-$M "$P" wait-title "Example Domain" 8 >/dev/null
-go iana.org; $M "$P" wait-title "Internet Assigned" 10 >/dev/null
-$M "$P" key "cmd+["; $M "$P" wait-title "Example Domain" 8 >/dev/null
-$M "$P" key cmd+t; s; go iana.org; $M "$P" wait-title "Internet Assigned" 10 >/dev/null
-$M "$P" key cmd+t; s; $M "$P" key escape; s; $M "$P" key cmd+1; s
-$C quit >/dev/null
-cp "$run/state/session.json" "$E/session.json" 2>/dev/null
-check session-save sh -c "grep -q example.com $run/state/session.json && grep -q iana.org $run/state/session.json && grep -q '\"active\":0' $run/state/session.json"
-$C relaunch >/dev/null; P=$($C pid)
-check session-restore $M "$P" wait-title "Example Domain – 1/2" 8
-$M "$P" shot "$E/session-restored.png" >/dev/null
-$M "$P" key cmd+2; s; $C quit >/dev/null
-$C relaunch https://example.org >/dev/null; P=$($C pid)
-check session-plus-link $M "$P" wait-title "– 3/3" 8
-echo 'restore_session = false' >>"$run/state/config"
-$C quit >/dev/null; $C relaunch >/dev/null; P=$($C pid)
-check session-off $M "$P" wait-title "New Tab – 1/1" 5
-$C quit >/dev/null
-check session-off-deletes test ! -e "$run/state/session.json"
-
-echo "== perf"
-$C stop >/dev/null 2>&1
-.claude/skills/verify-mako/scripts/perf | grep -v '^==' | while read -r line; do echo "$line"; done
-perf_fails=${PIPESTATUS[0]}
-if [ "$perf_fails" = 100 ]; then echo "SKIP perf budgets not checked (busy machine)"; else fails=$((fails + perf_fails)); fi
-
-echo "== $fails failure(s); evidence in $E"
-exit "$fails"
+printf '%s\n' "${summary[@]}"
+echo "== $fails failure(s); evidence in verify-runs/<script>/evidence and verify-runs/latest/evidence (perf)"
+exit "$((fails > 255 ? 255 : fails))"
