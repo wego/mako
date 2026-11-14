@@ -19,6 +19,20 @@ is() { test "$(q "$1")" = "$2"; }
 # within <command...>: polls for up to 2 s
 within() { for _ in $(seq 20); do "$@" >/dev/null 2>&1 && return 0; sleep 0.1; done; return 1; }
 front() { osascript -e 'tell application "System Events" to get name of first process whose frontmost is true' 2>/dev/null; }
+not() { ! "$@"; }
+# inked <png> <ax-id>: that element's rect in a window shot holds ink, not just flat paper
+inked() {
+  read -r wx wy ww _ <<<"$($M "$P" window-frame)"; read -r x y w h <<<"$($M "$P" frame "$2")"
+  sips -s format bmp "$1" --out "$1.bmp" >/dev/null 2>&1 && python3 -I -c '
+import struct, sys
+b = open(sys.argv[1], "rb").read()
+off, W, H, bpp = struct.unpack_from("<I", b, 10)[0], *struct.unpack_from("<ii", b, 18), struct.unpack_from("<H", b, 28)[0] // 8
+k = W / float(sys.argv[2]); x, y, w, h = (round(float(v) * k) for v in sys.argv[3:7])
+stride = (W * bpp + 3) // 4 * 4
+lum = [sum(b[i:i + 3]) / 3 for yy in range(y, y + h) for i in
+       [off + ((H - 1 - yy) if H > 0 else yy) * stride + xx * bpp for xx in range(x, x + w)]]
+sys.exit(0 if max(lum) - min(lum) > 20 else 1)' "$1.bmp" "$ww" $((x - wx)) $((y - wy)) "$w" "$h"
+}
 omni() { $M "$P" menu File "$1"; sleep 0.3; $M "$P" set mako.omnibox.field "$2"; $M "$P" confirm mako.omnibox.field; sleep "${3:-2}"; }
 trap '$C stop >/dev/null 2>&1; kill $srv 2>/dev/null; wait $srv 2>/dev/null' EXIT
 
@@ -50,6 +64,22 @@ $M "$P" menu Trails "Previous Page"; sleep 0.4
 check previous-page is 's["active"]' 2
 $M "$P" menu Trails "Next Page"; sleep 0.4
 check next-page is 's["active"]' 3
+
+echo "== row controls"
+check every-row-has-a-close-control test "$($M "$P" tree | grep -c 'id=\"mako\.trail\.[0-9]*\.close\"')" = 3
+$M "$P" shot "$E/rows-no-hover.png" >/dev/null
+check close-control-has-a-frame $M "$P" frame mako.trail.3.close
+check no-close-without-hover not inked "$E/rows-no-hover.png" mako.trail.3.close
+check no-expanded-toggle-without-hover not inked "$E/rows-no-hover.png" mako.trail.1.toggle
+$M "$P" press-id mako.trail.1.toggle; sleep 0.5
+$M "$P" shot "$E/rows-collapsed.png" >/dev/null
+check collapsed-toggle-shows-faintly inked "$E/rows-collapsed.png" mako.trail.1.toggle
+$M "$P" press-id mako.trail.1.toggle; sleep 0.5; $M "$P" press-id mako.trail.3; sleep 0.5
+cp "$J" "$E/pre-close-control.json"
+$M "$P" press-id mako.trail.3.close; sleep 0.6
+check close-control-closes-its-page is '(sorted(n), s["active"])' "(['1', '2'], 2)"
+$M "$P" menu File "Reopen Closed Page"; sleep 1
+check reopen-undoes-close-control cmp -s "$J" "$E/pre-close-control.json"
 
 echo "== jump to a trail (⌘1…⌘9 items)"
 $M "$P" menu Trails "Page A"; sleep 0.4
@@ -97,12 +127,24 @@ check in-place-fix-hides-config-note within sh -c "! $M $P exists mako.sidebar.c
 
 echo "== omnibox"
 check load-hidden-below-cap sh -c "! $M $P exists mako.sidebar.load"
+$M "$P" menu File "New Trail"; sleep 0.3
+check no-status-without-a-message sh -c "! $M $P exists mako.omnibox.status"
+check field-names-a-new-trail sh -c "$M $P tree | grep -q 'id=\"mako.omnibox.field\".*desc=\"New trail'"
+$M "$P" set mako.omnibox.field ""; $M "$P" confirm mako.omnibox.field; sleep 0.3
 omni "New Trail" "$U/c.html?t2"
 check new-trail is 's["roots"]' "[1, 4]"
+$M "$P" menu Trails "Move Page Up"; sleep 0.4
+check root-moves-its-trail-up is '(s["roots"], s["colors"])' "([4, 1], {'1': 0, '4': 1})"
+$M "$P" menu Trails "Move Page Down"; sleep 0.4
+check root-moves-its-trail-down is 's["roots"]' "[1, 4]"
 check load-shown-at-cap test "$($M "$P" value mako.sidebar.load)" = "🧠 2/2"
 omni "New Trail" "$U/c.html?t3" 1
 check third-trail-refused is 'len(s["roots"])' 2
 check cap-message sh -c "$M $P value mako.omnibox.status | head -1 | grep -q 'trail cap reached (2)'"
+$M "$P" shot "$E/omnibox-cap-error.png" >/dev/null
+$M "$P" menu File "New Page in Trail"; sleep 0.3
+check reopened-omnibox-drops-the-message sh -c "! $M $P exists mako.omnibox.status"
+check field-names-a-page-beneath sh -c "$M $P tree | grep -q 'id=\"mako.omnibox.field\".*desc=\"New page beneath'"
 omni "New Page in Trail" "$U/c.html?child"
 check new-page-is-child is 'n["5"]["parent"]' 4
 omni "Open Location…" "$U/c.html?inplace"
@@ -155,11 +197,11 @@ $M "$P" set mako.divider 100; sleep 0.5
 check width-floor-is-160 test "$($M "$P" value mako.divider)" = 160
 $M "$P" shot "$E/narrow-deep.png" >/dev/null
 $M "$P" press-id mako.trail.10; sleep 0.4; $M "$P" menu Trails "Rename Page…"; sleep 0.4
-row=$($M "$P" frame mako.trail.10); toggle=$($M "$P" frame mako.trail.10.toggle); name=$($M "$P" frame mako.trail.10.name)
-echo "depth-5 row [$row] toggle [$toggle] name [$name]" > "$E/narrow-deep.txt"
-read -r rx _ rw _ <<<"$row"; read -r tx _ _ _ <<<"$toggle"; read -r nx _ nw _ <<<"$name"
+row=$($M "$P" frame mako.trail.10); close=$($M "$P" frame mako.trail.10.close); name=$($M "$P" frame mako.trail.10.name)
+echo "depth-5 row [$row] close [$close] name [$name]" > "$E/narrow-deep.txt"
+read -r rx _ rw _ <<<"$row"; read -r cx _ _ _ <<<"$close"; read -r nx _ nw _ <<<"$name"
 check deep-name-keeps-40pt test "${nw:-0}" -ge 40
-check deep-name-clear-of-toggle test $((nx + nw)) -le "${tx:-0}"
+check deep-name-clear-of-close test $((nx + nw)) -le "${cx:-0}"
 check deep-name-inside-row test "${nx:-0}" -ge "${rx:-1}"
 log show --last 5m --predicate "processID == $P" 2>/dev/null > "$E/narrow-deep.log"
 check no-broken-constraints sh -c "! grep -q 'Unable to simultaneously satisfy' '$E/narrow-deep.log'"
