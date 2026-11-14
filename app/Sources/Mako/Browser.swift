@@ -117,6 +117,8 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
     private let omnibox = NSGlassEffectView()
     private let field = OmniboxField()
     private let hint = NSTextField(labelWithString: "")
+    private var folderWatch: DispatchSourceFileSystemObject?
+    private var fileWatch: DispatchSourceFileSystemObject?
 
     override init() {
         window = MenuFirstWindow(
@@ -137,6 +139,8 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         let safari = Bundle(path: "/Applications/Safari.app")?.infoDictionary?["CFBundleShortVersionString"] as? String ?? "26.0"
         webConfig.applicationNameForUserAgent = "Version/\(safari) Safari/605.1.15"
         buildOmnibox()
+        folderWatch = watch(Core.configURL.deletingLastPathComponent())
+        fileWatch = watch(Core.configURL)
         render()
         if Self.background { window.orderBack(nil) } else { window.makeKeyAndOrderFront(nil) }
         if store.active == nil { showOmnibox(for: .newTrail) }
@@ -161,6 +165,7 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         sidebar.onClose = { [unowned self] in close($0) }
         sidebar.onPlace = { [unowned self] in apply("place", ["id": $0, "target": $1, "place": $2.rawValue]) }
         sidebar.iconFor = { [unowned self] in favicons.icon(for: $0.url) }
+        sidebar.onOpenConfig = { [unowned self] in openConfig(nil) }
         favicons.onChange = { [unowned self] in sidebar.refreshIcons() }
         divider.onDrag = { [unowned self] in setSidebarWidth(sidebarWidth.constant + $0) }
         divider.onSet = { [unowned self] in setSidebarWidth($0) }
@@ -240,11 +245,43 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         blank.isHidden = active != nil
         window.title = active?.label ?? "Mako"
         window.subtitle = ""
-        if !omnibox.isHidden { updateHint() }
         sidebar.update(store.rows)
-        sidebar.showLoad(trails: store.rows.filter { $0.depth == 0 }.count, max: Core.maxTrails)
+        showConfig()
         rebuildTrailsMenu()
         if omnibox.isHidden, let view { window.makeFirstResponder(view) }
+    }
+
+    /// What the window shows from the config: the cap and config notes, the omnibox status.
+    private func showConfig() {
+        if !omnibox.isHidden { updateHint() }
+        sidebar.showLoad(trails: store.rows.filter { $0.depth == 0 }.count, max: Core.maxTrails)
+        sidebar.showConfigIssue(Core.configError)
+    }
+
+    /// Editors and Settings mostly save the config by renaming a new file over it, which only
+    /// its folder sees; an in-place save only the file sees. A rename leaves the file watch on
+    /// the replaced file, so it is renewed on every change.
+    @objc private func configChanged() {
+        fileWatch?.cancel()
+        fileWatch = watch(Core.configURL)
+        showConfig()
+    }
+
+    /// Calls configChanged once a burst of writes to the file or folder at `url` settles.
+    private func watch(_ url: URL) -> DispatchSourceFileSystemObject? {
+        let fd = Darwin.open(url.path, O_EVTONLY)
+        guard fd >= 0 else { return nil }
+        let source = DispatchSource.makeFileSystemObjectSource(fileDescriptor: fd, eventMask: .write, queue: .main)
+        source.setEventHandler { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(self.configChanged), object: nil)
+                self.perform(#selector(self.configChanged), with: nil, afterDelay: 0.1)
+            }
+        }
+        source.setCancelHandler { Darwin.close(fd) }
+        source.resume()
+        return source
     }
 
     /// The page's web view, created and loaded from its saved address on first use.

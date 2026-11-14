@@ -32,7 +32,9 @@ trap 'stop; kill $srv 2>/dev/null; wait $srv 2>/dev/null; .claude/skills/verify-
 
 [ "${MAKO_SKIP_BUILD:-}" = 1 ] || script/bundle >/dev/null || { echo "FAIL build"; exit 99; }
 stop; rm -rf "$run/state" "$run/app"; mkdir -p "$run/state" "$run/app" "$run/evidence"
-printf 'max_tabs = 3\nmax_trails = 2\nblock x.com\n' >"$run/state/config"  # a leftover max_tabs line must not drop the blocklist
+# Unusable lines (a leftover max_tabs, a typo key, a bad schedule) must cost only themselves:
+# the cap of 2 and the x.com block below still apply, the block at all times.
+printf 'max_tabs = 3\ncolour = red\nmax_trails = 2\nblock x.com 09:00-25:00\n' >"$run/state/config"
 cp -R build/Mako.app "$app"
 /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier com.wego.mako.verify.trails-bg" -c "Delete :CFBundleURLTypes" "$app/Contents/Info.plist"
 codesign --force --sign - "$app" 2>/dev/null
@@ -74,6 +76,7 @@ t=$(tree); echo "$t" >"$run/evidence/blocked.txt"
 check blocked-link-opens-child sh -c "echo '$t' | grep -q '^1 - home \*'"
 logs >"$run/evidence/blocked-log.txt"
 check blocked-child-shows-notice grep -q 'block x.com: x.com is blocked' "$run/evidence/blocked-log.txt"
+check bad-schedule-blocks-at-all-times grep -q 'block x.com: x.com is blocked\.$' "$run/evidence/blocked-log.txt"
 check blocked-host-icon-never-fetched sh -c "! grep -q 'favicon x.com' $run/evidence/blocked-log.txt"
 check form-submit-stays-in-page sh -c "echo '$t' | grep -q '^0 Page C c.html?q=1'"
 check two-pages-only test "$(echo "$t" | wc -l | tr -d ' ')" = 2

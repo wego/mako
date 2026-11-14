@@ -54,60 +54,82 @@ pub fn set_setting(text: &str, key: &str, value: &str) -> String {
     lines.join("\n") + "\n"
 }
 
-pub fn parse_config(text: &str) -> Result<Config, String> {
-    let mut cfg = Config::default();
+/// The config read line by line, and every line it could not use.
+#[derive(Debug, PartialEq)]
+pub struct Parsed {
+    pub config: Config,
+    pub issues: Vec<Issue>,
+}
+
+/// One unusable line: `config line <line>: <why>: `<text>``.
+#[derive(Debug, PartialEq)]
+pub struct Issue {
+    pub line: usize,
+    pub message: String,
+}
+
+/// Never fails: each line applies on its own, so a typo costs only its own line.
+pub fn parse_config(text: &str) -> Parsed {
+    let mut config = Config::default();
+    let mut issues = vec![];
     for (i, raw) in text.lines().enumerate() {
         let line = raw.split('#').next().unwrap().trim();
         if line.is_empty() {
             continue;
         }
-        let err = |msg: &str| format!("config line {}: {msg}: `{line}`", i + 1);
-        if let Some((key, val)) = line.split_once('=') {
-            let val = val.trim();
-            match key.trim() {
-                // Left over from the tabs era. Rejecting it would make the shell fall back to
-                // the default config, which silently drops every block rule.
-                "max_tabs" => {}
-                // Clamped, not rejected: a parse error drops the blocklist along with it.
-                "max_trails" => {
-                    let n: usize = val.parse().ok().filter(|n| *n > 0).ok_or_else(|| err("max_trails must be a positive integer"))?;
-                    cfg.max_trails = n.min(trails::MAX_TRAILS)
-                }
-                "restore_session" => {
-                    cfg.restore_session = val.parse().map_err(|_| err("restore_session must be true or false"))?
-                }
-                "search" if val.contains("%s") => cfg.search = val.into(),
-                "search" => return Err(err("search must contain %s")),
-                _ => return Err(err("unknown setting")),
-            }
-            continue;
+        if let Err(why) = apply_line(&mut config, line) {
+            issues.push(Issue { line: i + 1, message: format!("config line {}: {why}: `{line}`", i + 1) });
         }
-        let mut parts = line.split_whitespace();
-        if parts.next() != Some("block") {
-            return Err(err("expected `block <domain> [HH:MM-HH:MM] [days]` or `key = value`"));
-        }
-        let domain = parts.next().ok_or_else(|| err("missing domain"))?.trim_start_matches("*.").to_lowercase();
-        let window = match parts.next() {
-            None => None,
-            Some(range) => {
-                let (start, end) = range.split_once('-').ok_or_else(|| err("bad time range"))?;
-                let days = match parts.next() {
-                    None => 0b111_1111,
-                    Some(d) => parse_days(d).ok_or_else(|| err("bad days"))?,
-                };
-                Some(Window {
-                    days,
-                    start: parse_hhmm(start).ok_or_else(|| err("bad start time"))?,
-                    end: parse_hhmm(end).ok_or_else(|| err("bad end time"))?,
-                })
-            }
-        };
-        if parts.next().is_some() {
-            return Err(err("trailing input"));
-        }
-        cfg.blocks.push(Block { domain, window });
     }
-    Ok(cfg)
+    Parsed { config, issues }
+}
+
+/// Applies one directive to `cfg`. On error, settings keep their defaults; a block
+/// line with a domain still blocks it, at all times, since the schedule is unknown.
+fn apply_line(cfg: &mut Config, line: &str) -> Result<(), String> {
+    if let Some((key, val)) = line.split_once('=') {
+        let val = val.trim();
+        match key.trim() {
+            // Left over from the tabs era.
+            "max_tabs" => {}
+            "max_trails" => {
+                let n: usize = val.parse().ok().filter(|n| *n > 0).ok_or("max_trails must be a positive integer")?;
+                cfg.max_trails = n.min(trails::MAX_TRAILS)
+            }
+            "restore_session" => cfg.restore_session = val.parse().map_err(|_| "restore_session must be true or false")?,
+            "search" if val.contains("%s") => cfg.search = val.into(),
+            "search" => return Err("search must contain %s".into()),
+            _ => return Err("unknown setting".into()),
+        }
+        return Ok(());
+    }
+    let mut parts = line.split_whitespace();
+    if parts.next() != Some("block") {
+        return Err("expected `block <domain> [HH:MM-HH:MM] [days]` or `key = value`".into());
+    }
+    let domain = parts.next().ok_or("missing domain")?.trim_start_matches("*.").to_lowercase();
+    let (window, problem) = match parse_window(parts.collect()) {
+        Ok(window) => (window, None),
+        Err(why) => (None, Some(format!("{why} – blocking it at all times"))),
+    };
+    cfg.blocks.push(Block { domain, window });
+    problem.map_or(Ok(()), Err)
+}
+
+/// `[HH:MM-HH:MM [days]]`; nothing means always.
+fn parse_window(schedule: Vec<&str>) -> Result<Option<Window>, &'static str> {
+    let (range, days) = match schedule[..] {
+        [] => return Ok(None),
+        [range] => (range, None),
+        [range, days] => (range, Some(days)),
+        _ => return Err("trailing input"),
+    };
+    let (start, end) = range.split_once('-').ok_or("bad time range")?;
+    Ok(Some(Window {
+        days: days.map_or(Some(0b111_1111), parse_days).ok_or("bad days")?,
+        start: parse_hhmm(start).ok_or("bad start time")?,
+        end: parse_hhmm(end).ok_or("bad end time")?,
+    }))
 }
 
 fn parse_hhmm(s: &str) -> Option<u16> {
@@ -211,8 +233,19 @@ fn encode(s: &str) -> String {
 mod tests {
     use super::*;
 
+    /// A config with no issues: every line in `t` must be valid.
     fn cfg(t: &str) -> Config {
-        parse_config(t).unwrap()
+        let parsed = parse_config(t);
+        assert_eq!(parsed.issues, [], "{t}");
+        parsed.config
+    }
+
+    fn always(domain: &str) -> Block {
+        Block { domain: domain.into(), window: None }
+    }
+
+    fn blocked_all_week(c: &Config, host: &str) -> bool {
+        (0..7).all(|day| [0, 9 * 60, 12 * 60, 23 * 60 + 59].iter().all(|m| blocked(c, host, day, *m).is_some()))
     }
 
     #[test]
@@ -259,10 +292,57 @@ mod tests {
     }
 
     #[test]
-    fn rejects_bad_config_with_line_number() {
+    fn reports_each_bad_line_with_its_number_and_text() {
         for bad in ["max_trails = 0", "restore_session = maybe", "search = x", "block", "block a.com 9-5", "block a.com 09:00-25:00", "block a.com 09:00-17:00 funday", "blok a.com", "colour = red"] {
-            assert!(parse_config(&format!("\n{bad}")).unwrap_err().starts_with("config line 2:"), "{bad}");
+            let issues = parse_config(&format!("\n{bad}")).issues;
+            assert_eq!(issues.len(), 1, "{bad}");
+            assert_eq!(issues[0].line, 2, "{bad}");
+            assert!(issues[0].message.starts_with("config line 2: "), "{bad}: {}", issues[0].message);
+            assert!(issues[0].message.ends_with(&format!(": `{bad}`")), "{bad}: {}", issues[0].message);
         }
+    }
+
+    #[test]
+    fn a_typo_line_keeps_the_blocklist() {
+        let parsed = parse_config("colour = red\nblock x.com\n");
+        assert_eq!(parsed.config.blocks, [always("x.com")]);
+        assert!(blocked_all_week(&parsed.config, "x.com"));
+        assert_eq!(parsed.issues, [Issue { line: 1, message: "config line 1: unknown setting: `colour = red`".into() }]);
+    }
+
+    #[test]
+    fn a_bad_schedule_blocks_the_domain_at_all_times() {
+        for line in ["block youtube.com 09:00-25:00", "block youtube.com 09:00-17:00 funday", "block youtube.com 9-5", "block youtube.com 09:00-17:00 mon extra"] {
+            let parsed = parse_config(line);
+            assert_eq!(parsed.config.blocks, [always("youtube.com")], "{line}");
+            assert!(blocked_all_week(&parsed.config, "www.youtube.com"), "{line}");
+            assert_eq!(parsed.issues.len(), 1, "{line}");
+            assert_eq!(parsed.issues[0].line, 1, "{line}");
+        }
+    }
+
+    #[test]
+    fn a_block_line_without_a_domain_is_an_issue_and_other_blocks_stay() {
+        let parsed = parse_config("block x.com\nblock\nblock y.com\n");
+        assert_eq!(parsed.config.blocks, [always("x.com"), always("y.com")]);
+        assert_eq!(parsed.issues.iter().map(|i| i.line).collect::<Vec<_>>(), [2]);
+    }
+
+    #[test]
+    fn a_bad_value_keeps_that_default_and_applies_every_other_line() {
+        let parsed = parse_config("max_trails = abc\nrestore_session = false\nsearch = https://d.com/?q=%s\nblock x.com\n");
+        assert_eq!(parsed.config.max_trails, trails::DEFAULT_MAX_TRAILS);
+        assert!(!parsed.config.restore_session);
+        assert_eq!(parsed.config.search, "https://d.com/?q=%s");
+        assert_eq!(parsed.config.blocks, [always("x.com")]);
+        assert_eq!(parsed.issues, [Issue { line: 1, message: "config line 1: max_trails must be a positive integer: `max_trails = abc`".into() }]);
+    }
+
+    #[test]
+    fn several_bad_lines_are_all_reported_in_file_order() {
+        let parsed = parse_config("# mine\ncolour = red\nblock x.com\nmax_trails = -1\nblok y.com\n\nblock z.com 25:00-26:00\n");
+        assert_eq!(parsed.issues.iter().map(|i| i.line).collect::<Vec<_>>(), [2, 4, 5, 7]);
+        assert_eq!(parsed.config.blocks, [always("x.com"), always("z.com")]);
     }
 
     #[test]
@@ -289,7 +369,7 @@ mod tests {
         let text: String = (0..500).map(|i| format!("block site{i}.example 09:00-18:00 weekdays\n")).collect();
         let start = std::time::Instant::now();
         for i in 0..1_000 {
-            let c = parse_config(&text).unwrap();
+            let c = parse_config(&text).config;
             std::hint::black_box(blocked(&c, &format!("www.site{}.example", i % 600), 0, 600));
         }
         let per_call = start.elapsed() / 1_000;

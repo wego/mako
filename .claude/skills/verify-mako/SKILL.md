@@ -63,7 +63,7 @@ Full command reference, exit codes, AX handles, and recipes: `docs/control.md`. 
 | `shot <path>` | window screenshot (works even when other windows cover it) |
 | `pointer-center` | parks the pointer over the page, for perf runs |
 
-Stable AX handles (full table in `docs/control.md`): `mako.sidebar` (the trails list), `mako.trail.<id>` (a sidebar row; `id` is the page's permanent id from `trails.json`, value `selected` on the active page), `mako.trail.<id>.toggle` (collapse control), `mako.trail.<id>.name` (rename field), `mako.trail.<id>.page` (a loaded page's web view), `mako.sidebar.load` (the `🧠 n/max` note, present only at the trail cap), `mako.divider` (sidebar width), `mako.page` (web container), `mako.omnibox`, `mako.omnibox.field`, `mako.omnibox.status` (error, what Enter does, trail and page counts), `mako.blank` (shown with no page), `mako.popup`, `mako.dialog.ok` / `.cancel` / `.field` / `.silence`, `mako.settings.maxTrails` and `.stepper`. The `Trails` menu has Next Page, Previous Page, the move items and Rename Page…, then one item per visible page, indented by depth, the active one checked; a trail's root item carries ⌘1…⌘9.
+Stable AX handles (full table in `docs/control.md`): `mako.sidebar` (the trails list), `mako.trail.<id>` (a sidebar row; `id` is the page's permanent id from `trails.json`, value `selected` on the active page), `mako.trail.<id>.toggle` (collapse control), `mako.trail.<id>.name` (rename field), `mako.trail.<id>.page` (a loaded page's web view), `mako.sidebar.load` (the `🧠 n/max` note, present only at the trail cap), `mako.sidebar.config` (the `⚠ config line …` note, present only while a config line is unusable), `mako.divider` (sidebar width), `mako.page` (web container), `mako.omnibox`, `mako.omnibox.field`, `mako.omnibox.status` (error, what Enter does, trail and page counts), `mako.blank` (shown with no page), `mako.popup`, `mako.dialog.ok` / `.cancel` / `.field` / `.silence`, `mako.settings.maxTrails` and `.stepper`. The `Trails` menu has Next Page, Previous Page, the move items and Rename Page…, then one item per visible page, indented by depth, the active one checked; a trail's root item carries ⌘1…⌘9.
 
 ## Evidence
 
@@ -90,8 +90,8 @@ Each lives in `.claude/skills/verify-mako/scripts/` and runs from the repo root 
 
 | Script | Covers | Needs | Checks |
 | --- | --- | --- | --- |
-| `trails-bg` | links nest, in-place navigation, restart restore and lazy loading, external links and the trail cap, blocked links, form submits, trail colours, site icons, file links | nothing: no focus, no permissions | 24 |
-| `trails-ax` | sidebar rows, collapse, Trails menu and ⌘1…⌘9 items, sidebar width, Settings, omnibox, trail cap and 🧠 note, close, Undo Close across a restart, moves, rename, find, deep rows at the narrowest sidebar | Accessibility | 53 |
+| `trails-bg` | links nest, in-place navigation, restart restore and lazy loading, external links and the trail cap, blocked links (under a config with unusable lines), form submits, trail colours, site icons, file links | nothing: no focus, no permissions | 25 |
+| `trails-ax` | sidebar rows, collapse, Trails menu and ⌘1…⌘9 items, sidebar width, Settings, omnibox, trail cap and 🧠 note, live config edits, close, Undo Close across a restart, moves, rename, find, deep rows at the narrowest sidebar | Accessibility | 59 |
 | `dialogs-bg` | `alert()`, `confirm()`, `prompt()` wait for the person | nothing | 3 |
 | `dialogs-ax` | answering dialogs, silencing, which navigations lift it | Accessibility | 17 |
 | `isolation-ax` | a run's website data is invisible to another run; the daily Mako's data is untouched | Accessibility | 4 (the last is `SKIP` while the daily Mako runs) |
