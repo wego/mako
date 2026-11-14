@@ -31,7 +31,8 @@ Each file: H1 title, one paragraph of user-visible behavior, then `Sub-features`
 
 - [Window](./window.md) covers the chromeless window: the traffic lights on the sidebar, moving the window by the sidebar's paper or the top strip, title-bar double-clicks, hiding the sidebar (⌃⌘S) and peeking it from the left edge.
 - [Trails](./trails.md) covers the sidebar's trees of pages: links opening child pages, the trail cap, select, the hover × and toggle, ⌘1…⌘9 jumps, close, Undo Close, collapse, moves, rename, middle-clicks, colours, site icons, width, find, downloads.
-- [Omnibox](./omnibox.md) covers address entry, search, what Enter does for ⌘L, ⌘T, ⌥⌘T and ⌘F, the scrim and ring that mark it open, the error line, and dismissal (Escape or a click outside).
+- [Omnibox](./omnibox.md) covers address entry, search, suggestions from open pages and history, what Enter does for ⌘L, ⌘T, ⌥⌘T and ⌘F, the scrim and ring that mark it open, the error line, and dismissal (Escape or a click outside).
+- [History](./history.md) covers recording visits in `history.json`, what counts as a visit, the cap, `remember_history = false` and Clear History….
 - [Settings](./settings.md) covers the ⌘. window and its trail cap.
 - [Session restore](./session.md) covers saving `trails.json` on every change, restoring at launch, links at launch, turning it off, migration and unreadable files.
 - [Blocklist](./blocklist.md) covers blocked and allowed hosts, time windows, iframes, live config edits and config errors.

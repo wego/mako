@@ -1,0 +1,152 @@
+#!/bin/bash
+# The address bar's suggestions through accessibility actions, without focus: visits land in
+# history.json, typing lists open pages first and then history, pressing an open page goes to
+# it without opening anything, pressing a history row loads it where the same address typed
+# would go (this page, a new trail, a page beneath), an empty query and find list nothing,
+# a relaunch keeps the history and adds no visits, a page inside a collapsed one is still found, remember_history = false records and
+# suggests nothing from history, and Clear History… asks, then empties it.
+# Still pages (fixtures/omnibox). Needs Accessibility permission. Exit status = failures.
+set -u
+cd "$(dirname "$0")/../../../.."
+export MAKO_BACKGROUND=1 MAKO_RUN="$PWD/verify-runs/omnibox-ax"
+C=.claude/skills/verify-mako/scripts/control-mako; M=verify-runs/.bin/makoctl
+E="$MAKO_RUN/evidence"; J="$MAKO_RUN/state/trails.json"; H="$MAKO_RUN/state/history.json"
+fails=0; P=
+pass() { echo "PASS $1"; }
+fail() { echo "FAIL $1 (trails $(q '(s["roots"], s["active"], {k: v["url"].rsplit("/", 1)[-1] for k, v in n.items()})' 2>/dev/null); history $(visits 2>/dev/null); rows $(rows 2>/dev/null | tr '\n' ';'))"; fails=$((fails + 1)); }
+check() { local name=$1; shift; if "$@" >/dev/null 2>&1; then pass "$name"; else fail "$name"; fi; }
+q() { python3 -c "import json; s=json.load(open('$J')); n=s['nodes']; print($1)"; }
+is() { test "$(q "$1")" = "$2"; }
+# visits: "<page>:<visits>" per history entry, sorted, e.g. "one.html:2 two.html:1"
+visits() { python3 -c "import json; print(' '.join(sorted(e['url'].rsplit('/', 1)[-1] + ':' + str(e['visits']) for e in json.load(open('$H'))['entries'])))"; }
+titled() { python3 -c "import json, sys; sys.exit(0 if any(e['url'].endswith('$1') and e['title'] == '$2' for e in json.load(open('$H'))['entries']) else 1)"; }
+within() { for _ in $(seq 40); do "$@" >/dev/null 2>&1 && return 0; sleep 0.1; done; return 1; }
+history_is() { local now; now=$(visits) && test "$now" = "$1"; }
+# rows: one "<kind> – <page>" line per suggestion, in display order
+rows() { $M "$P" tree | sed -n 's/.*id="mako\.omnibox\.suggestion\.[0-9]*".* desc="\([A-Za-z ]*\) – .*\/\([^"\/]*\)".*/\1 – \2/p'; }
+rows_are() { test "$(rows | tr '\n' ';')" = "$1"; }
+no_rows() { $M "$P" exists mako.omnibox || return 1; $M "$P" exists mako.omnibox.suggestion.0; test $? = 4; }
+closed() { $M "$P" exists mako.page || return 1; $M "$P" exists mako.omnibox; test $? = 4; }
+# typed <menu> <item> <text>: opens the omnibox from the menu and sets the field
+typed() { $M "$P" menu "$1" "$2"; sleep 0.3; $M "$P" set mako.omnibox.field "$3"; sleep 0.3; }
+go() { typed "$1" "$2" "$3"; $M "$P" confirm mako.omnibox.field; }
+trap '$C stop >/dev/null 2>&1; kill $srv 2>/dev/null; wait $srv 2>/dev/null' EXIT
+
+$C stop >/dev/null 2>&1
+[ "${MAKO_SKIP_BUILD:-}" = 1 ] || $C build >/dev/null || { echo "FAIL build"; exit 99; }
+mkdir -p "$E"
+port=$((20000 + RANDOM % 20000)); U="http://127.0.0.1:$port"
+python3 -m http.server "$port" --bind 127.0.0.1 -d .claude/skills/verify-mako/fixtures/omnibox >/dev/null 2>&1 &
+srv=$!; sleep 1
+out=$($C launch "" "$U/one.html" 2>&1) || { echo "FAIL launch: $out"; exit 99; }
+P=$($C pid)
+
+echo "== visits are recorded"
+check first-visit-recorded within history_is "one.html:1"
+check visit-keeps-the-title titled one.html "Page one"
+go File "Open Location…" "$U/two.html"
+check address-bar-load-recorded within history_is "one.html:1 two.html:1"
+go File "New Trail" "$U/three.html"
+check new-trail-load-recorded within history_is "one.html:1 three.html:1 two.html:1"
+
+echo "== suggestions"
+$M "$P" menu File "Open Location…"; sleep 0.3
+check none-on-opening-with-the-address-filled-in no_rows
+$M "$P" set mako.omnibox.field page; sleep 0.3
+check open-pages-first-then-history rows_are "Open page – two.html;Open page – three.html;History – one.html;"
+check row-title-is-the-page-title sh -c "$M $P tree | grep 'id=\"mako.omnibox.suggestion.2\" title=\"Page one\"'"
+check no-row-selected-before-arrow-keys sh -c "! $M $P tree | grep -q 'mako.omnibox.suggestion.*value=\"selected\"'"
+$M "$P" tree 6 > "$E/suggestions-tree.txt"; $M "$P" shot "$E/suggestions.png" >/dev/null 2>&1
+$M "$P" set mako.omnibox.field "PAGE tw"; sleep 0.3
+check every-word-must-match-any-case rows_are "Open page – two.html;"
+$M "$P" set mako.omnibox.field zzz; sleep 0.3
+check no-match-no-rows no_rows
+$M "$P" set mako.omnibox.field page; sleep 0.3
+$M "$P" set mako.omnibox.field ""; sleep 0.3
+check empty-query-no-rows no_rows
+typed Edit "Find…" page
+check find-shows-no-rows no_rows
+$M "$P" press-id mako.omnibox.scrim; sleep 0.3
+
+echo "== an open page is selected, not loaded again"
+typed File "New Trail" two
+check open-page-offered-for-a-new-trail rows_are "Open page – two.html;"
+$M "$P" press-id mako.omnibox.suggestion.0; sleep 0.5
+check open-row-press-closes-the-omnibox closed
+check open-row-press-selects-the-page is '(s["active"], s["roots"], len(n))' "(1, [1, 2], 2)"
+check open-row-press-is-no-visit history_is "one.html:1 three.html:1 two.html:1"
+
+echo "== a history row goes where the address typed would"
+typed File "Open Location…" one
+check history-only-page-offered rows_are "History – one.html;"
+$M "$P" press-id mako.omnibox.suggestion.0
+check history-row-loads-into-this-page within is '(n["1"]["url"].endswith("/one.html"), len(n))' "(True, 2)"
+check history-row-load-counts-a-visit within history_is "one.html:2 three.html:1 two.html:1"
+typed File "New Trail" two
+$M "$P" press-id mako.omnibox.suggestion.0
+check history-row-opens-a-new-trail within is '(s["roots"], s["active"], n["3"]["url"].endswith("/two.html"))' "([1, 2, 3], 3, True)"
+within history_is "one.html:2 three.html:1 two.html:2"
+go File "Open Location…" "$U/four.html"
+within history_is "four.html:1 one.html:2 three.html:1 two.html:2"
+typed File "New Page in Trail" two
+$M "$P" press-id mako.omnibox.suggestion.0
+check history-row-opens-a-page-beneath within is '(n["3"]["children"], s["active"], n["4"]["url"].endswith("/two.html"))' "([4], 4, True)"
+check each-load-counted-once within history_is "four.html:1 one.html:2 three.html:1 two.html:3"
+
+echo "== a relaunch keeps the history and adds no visit"
+$C quit >/dev/null; $C relaunch >/dev/null; P=$($C pid)
+check restored-page-loads within sh -c "$M $P title | grep -q 'Page two'"
+sleep 1
+check history-survives-and-restoring-is-no-visit history_is "four.html:1 one.html:2 three.html:1 two.html:3"
+$M "$P" press-id mako.trail.3.toggle; sleep 0.4
+typed File "New Trail" two
+check page-inside-a-collapsed-one-still-offered rows_are "Open page – two.html;"
+$M "$P" press-id mako.omnibox.suggestion.0; sleep 0.5
+check picking-it-reveals-and-selects-it is '(s["active"], n["3"]["collapsed"], len(n))' "(4, False, 4)"
+
+echo "== remember_history = false"
+printf 'max_trails = 3\nremember_history = false\n' > "$MAKO_RUN/state/config"; sleep 0.5
+go File "Open Location…" "$U/five.html"
+check history-off-page-loads within sh -c "$M $P title | grep -q 'Page five'"
+sleep 1
+check history-off-records-nothing history_is "four.html:1 one.html:2 three.html:1 two.html:3"
+typed File "Open Location…" page
+check history-off-suggests-open-pages-only rows_are "Open page – one.html;Open page – three.html;Open page – four.html;Open page – five.html;"
+$M "$P" press-id mako.omnibox.scrim; sleep 0.3
+printf 'max_trails = 3\n' > "$MAKO_RUN/state/config"; sleep 0.5
+typed File "Open Location…" page
+check history-on-again-suggests-it rows_are "Open page – one.html;Open page – three.html;Open page – four.html;Open page – five.html;History – two.html;"
+$M "$P" press-id mako.omnibox.scrim; sleep 0.3
+
+echo "== Clear History…"
+$M "$P" menu History "Clear History…"
+check clear-asks-first within $M "$P" exists mako.dialog.cancel
+$M "$P" shot "$E/clear-history.png" >/dev/null 2>&1
+$M "$P" press-id mako.dialog.cancel; sleep 0.5
+check cancel-keeps-the-history history_is "four.html:1 one.html:2 three.html:1 two.html:3"
+$M "$P" menu History "Clear History…"
+within $M "$P" exists mako.dialog.ok
+$M "$P" press-id mako.dialog.ok
+check clear-empties-the-history within history_is ""
+typed File "New Trail" two
+check nothing-suggested-from-a-cleared-history no_rows
+$M "$P" press-id mako.omnibox.scrim
+
+echo "== a late title with history off"
+go File "Open Location…" "$U/retitle.html"
+check retitle-page-recorded within history_is "retitle.html:1"
+printf 'max_trails = 3\nremember_history = false\n' > "$MAKO_RUN/state/config"; sleep 0.5
+go File "Open Location…" "$U/retitle.html#secret"
+check retitle-page-renamed within sh -c "$M $P title | grep -q 'Renamed #secret'"
+sleep 0.5
+check history-off-keeps-the-old-title titled retitle.html "Retitle"
+printf 'max_trails = 3\n' > "$MAKO_RUN/state/config"; sleep 0.5
+
+echo "== an in-page jump then a reload is no visit"
+go File "Open Location…" "$U/retitle.html#here"
+within sh -c "$M $P title | grep -q 'Renamed #here'"
+$M "$P" menu View Reload; sleep 1.5
+check jump-then-reload-is-no-visit history_is "retitle.html:1"
+
+echo "== $fails failure(s); evidence in $E"
+exit "$fails"

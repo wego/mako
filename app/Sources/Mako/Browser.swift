@@ -90,6 +90,12 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
 
     let window: NSWindow
     private let store = TrailStore()
+    private let history = HistoryStore()
+    /// The address last counted as a visit per page, so a reload, or a restored page loading
+    /// again, is not a second visit.
+    private var visited: [UInt64: String] = [:]
+    /// Pages restored at launch, until each first loads: that load is not a visit either.
+    private var restored: Set<UInt64> = []
     /// Loaded pages by page id. Most pages have no web view until selected.
     private var views: [UInt64: WKWebView] = [:]
     private var observations: [UInt64: [NSKeyValueObservation]] = [:]
@@ -138,7 +144,11 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         editor.isFieldEditor = true
         return editor
     }()
+    private let suggestionList = SuggestionList()
+    private var suggestions: [Suggestion] = []
     private let hint = NSTextField(labelWithString: "")
+    /// Holds the hint, so it lines up with the field inside the panel's narrower margins.
+    private let hintRow = NSStackView()
     /// An error or message for the open omnibox; it goes when the omnibox next opens.
     private var omniMessage: String?
     private var omniboxOpen: Bool { !omniLayer.isHidden }
@@ -168,6 +178,7 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         let safari = Bundle(path: "/Applications/Safari.app")?.infoDictionary?["CFBundleShortVersionString"] as? String ?? "26.0"
         webConfig.applicationNameForUserAgent = "Version/\(safari) Safari/605.1.15"
         buildOmnibox()
+        restored = store.pages
         folderWatch = watch(Core.configURL.deletingLastPathComponent())
         fileWatch = watch(Core.configURL)
         render()
@@ -195,7 +206,10 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         sidebar.onPlace = { [unowned self] in if apply("place", ["id": $0, "target": $1, "place": $2.rawValue]) != nil { NSSound.beep() } }
         sidebar.iconFor = { [unowned self] in favicons.icon(for: $0.url) }
         sidebar.onOpenConfig = { [unowned self] in openConfig(nil) }
-        favicons.onChange = { [unowned self] in sidebar.refreshIcons() }
+        favicons.onChange = { [unowned self] in
+            sidebar.refreshIcons()
+            if !suggestions.isEmpty { showSuggestions() }
+        }
         divider.onSet = { [unowned self] in setSidebarWidth($0) }
 
         sidebar.onExit = { [unowned self] in if sidebarState == .peeking { setSidebar(.hidden) } }
@@ -324,7 +338,10 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
 
     /// Makes the window match the store: loaded pages, the visible page, sidebar, menu, title.
     private func render() {
-        for id in views.keys where !store.pages.contains(id) { unload(id) }
+        for id in views.keys where !store.pages.contains(id) {
+            unload(id)
+            visited[id] = nil
+        }
         let active = store.active
         let view = active.map(liveView)
         if view !== shown {
@@ -401,6 +418,7 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         ]
         views[id] = w
         reported[id] = [row.url, row.title]
+        if restored.remove(id) != nil { visited[id] = URL(string: row.url).map(Self.visitAddress) }
         if let url = URL(string: row.url) { w.load(URLRequest(url: url)) }
         return w
     }
@@ -424,6 +442,7 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         guard reported[id] != now else { return }
         reported[id] = now
         apply("navigated", ["id": id, "url": now[0], "title": now[1]])
+        history.retitled(now[0], title: now[1])
     }
 
     private func rebuildTrailsMenu() {
@@ -510,11 +529,19 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         line.spacing = 10
         line.distribution = .fill
         glyph.setContentHuggingPriority(.required, for: .horizontal)
-        let stack = NSStackView(views: [line, hint])
+        // The field and the hint keep a 16 pt margin; a suggestion's tint runs to 8 pt from the edge.
+        line.edgeInsets = NSEdgeInsets(top: 0, left: 8, bottom: 0, right: 10)
+        hintRow.addArrangedSubview(hint)
+        hintRow.edgeInsets = line.edgeInsets
+        suggestionList.onPick = { [unowned self] index, beside in
+            if suggestions.indices.contains(index) { pick(suggestions[index], beside: beside) }
+        }
+        suggestionList.isHidden = true
+        let stack = NSStackView(views: [line, suggestionList, hintRow])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 8
-        stack.edgeInsets = NSEdgeInsets(top: 14, left: 16, bottom: 14, right: 18)
+        stack.edgeInsets = NSEdgeInsets(top: 14, left: 8, bottom: 14, right: 8)
         stack.translatesAutoresizingMaskIntoConstraints = false
         omnibox.addSubview(stack)
         scrim.onDismiss = { [unowned self] in hideOmnibox() }
@@ -546,7 +573,8 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
             omnibox.centerXAnchor.constraint(equalTo: container.centerXAnchor),
             omnibox.topAnchor.constraint(equalTo: container.topAnchor, constant: 80),
             omnibox.widthAnchor.constraint(equalTo: container.widthAnchor, multiplier: 0.7),
-            line.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -34),
+            line.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -16),
+            suggestionList.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -16),
             // The 18 pt line height at every font size, so the panel never jumps while typing.
             field.heightAnchor.constraint(equalToConstant: OmniboxField.height),
         ])
@@ -571,6 +599,8 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         omniEditor.selectedTextAttributes = [.backgroundColor: accent.withAlphaComponent(0.3), .foregroundColor: NSColor.ink]
         omniMessage = nil
         updateHint()
+        suggestionList.slot = look.slot
+        suggest(nil)
         omniLayer.isHidden = false
         window.makeFirstResponder(field)
         field.currentEditor()?.selectAll(nil)
@@ -594,7 +624,26 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
     }
 
     func controlTextDidChange(_ note: Notification) {
-        if note.object as? NSTextField === field { field.fitFont() }
+        guard note.object as? NSTextField === field else { return }
+        field.fitFont()
+        suggest(field.stringValue)
+    }
+
+    /// Asks the core for rows matching `query` and shows them with none selected. The rows
+    /// appear once something is typed, never on opening, and never for find.
+    private func suggest(_ query: String?) {
+        if case .find = omniTarget { suggestions = [] } else {
+            suggestions = query.map { history.suggestions(for: $0, trails: store.state) } ?? []
+        }
+        showSuggestions()
+    }
+
+    private func showSuggestions() {
+        // Only the rows that fit above the window's bottom edge; a short window shows fewer.
+        // Below the panel's 80 pt offset: the field line (about 70 pt) and a 24 pt margin.
+        let room = container.bounds.height - 80 - 70 - 24
+        suggestions = Array(suggestions.prefix(max(1, Int(room / 32))))
+        suggestionList.show(suggestions) { [favicons] in favicons.known(for: $0.url) }
     }
 
     /// The status line shows only an error or message: the omnibox's own, else the config's.
@@ -603,6 +652,7 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         let text = omniMessage ?? Core.configError
         hint.stringValue = text ?? ""
         hint.isHidden = text == nil
+        hintRow.isHidden = text == nil
     }
 
     private func hideOmnibox() {
@@ -615,6 +665,8 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         case #selector(NSResponder.cancelOperation(_:)): hideOmnibox()
         // ⌥Return, which a field would otherwise take as a literal newline.
         case #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)): enter(beside: true)
+        case #selector(NSResponder.moveDown(_:)) where !suggestions.isEmpty: suggestionList.move(by: 1)
+        case #selector(NSResponder.moveUp(_:)) where !suggestions.isEmpty: suggestionList.move(by: -1)
         default: return false
         }
         return true
@@ -626,7 +678,25 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
     private func enter(beside: Bool) {
         guard omniboxOpen else { return }
         if case .find = omniTarget { return findNext(nil) }
+        if let row = suggestionList.selected, suggestions.indices.contains(row) { return pick(suggestions[row], beside: beside) }
         guard let url = Core.resolve(field.stringValue) else { return hideOmnibox() }
+        go(to: url, beside: beside)
+    }
+
+    /// A suggestion was chosen. A page that is already open is shown, whatever the omnibox was
+    /// opened for; an address from history goes where the same address typed would.
+    private func pick(_ suggestion: Suggestion, beside: Bool) {
+        guard omniboxOpen else { return }
+        if let open = suggestion.open {
+            hideOmnibox()
+            return select(open.id)
+        }
+        guard let url = URL(string: suggestion.url) else { return hideOmnibox() }
+        go(to: url, beside: beside)
+    }
+
+    /// Sends `url` where the open omnibox points: this page, a new trail, or a new page.
+    private func go(to url: URL, beside: Bool) {
         var error: String?
         switch omniTarget {
         case .current:
@@ -673,6 +743,23 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
     @objc func zoomOut(_: Any?) { if let shown { shown.pageZoom = max(0.3, shown.pageZoom - 0.1) } }
     @objc func zoomReset(_: Any?) { shown?.pageZoom = 1 }
     @objc func openConfig(_: Any?) { NSWorkspace.shared.open(Core.configURL) }
+
+    /// Asks first: forgetting every visit cannot be undone.
+    @objc func clearHistory(_: Any?) {
+        hideOmnibox()
+        let alert = NSAlert()
+        alert.messageText = "Clear history?"
+        alert.informativeText = "Mako forgets every page you have visited. Open pages and trails stay."
+        alert.addButton(withTitle: "Clear History").setAccessibilityIdentifier("mako.dialog.ok")
+        alert.addButton(withTitle: "Cancel").setAccessibilityIdentifier("mako.dialog.cancel")
+        alert.beginSheetModal(for: window) { [weak self] answer in
+            MainActor.assumeIsolated {
+                guard answer == .alertFirstButtonReturn else { return }
+                self?.history.clear()
+                log.info("history cleared")
+            }
+        }
+    }
 
     @objc func findInPage(_: Any?) { showOmnibox(for: .find, text: field.stringValue) }
     @objc func findNext(_: Any?) { find(backwards: false) }
@@ -983,6 +1070,18 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
             }
         }
         log.info("loaded page \(self.id(of: webView).map(String.init) ?? "popup", privacy: .public): \(webView.title ?? "", privacy: .public)")
+        if let id = id(of: webView), let url = webView.url, visited[id] != Self.visitAddress(url) {
+            visited[id] = Self.visitAddress(url)
+            history.visited(url.absoluteString, title: webView.title ?? "")
+        }
+    }
+
+    /// History keeps addresses without their #fragment, so an in-page jump then a reload is
+    /// the same address, not a new visit.
+    private static func visitAddress(_ url: URL) -> String {
+        var parts = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        parts?.fragment = nil
+        return parts?.string ?? url.absoluteString
     }
 
     func webView(_ webView: WKWebView, didFail _: WKNavigation!, withError error: Error) { showError(error, in: webView) }
