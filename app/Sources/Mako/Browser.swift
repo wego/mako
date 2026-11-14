@@ -418,7 +418,7 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         ]
         views[id] = w
         reported[id] = [row.url, row.title]
-        if restored.remove(id) != nil { visited[id] = row.url }
+        if restored.remove(id) != nil { visited[id] = URL(string: row.url).map(Self.visitAddress) }
         if let url = URL(string: row.url) { w.load(URLRequest(url: url)) }
         return w
     }
@@ -639,6 +639,10 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
     }
 
     private func showSuggestions() {
+        // Only the rows that fit above the window's bottom edge; a short window shows fewer.
+        // Below the panel's 80 pt offset: the field line (about 70 pt) and a 24 pt margin.
+        let room = container.bounds.height - 80 - 70 - 24
+        suggestions = Array(suggestions.prefix(max(1, Int(room / 32))))
         suggestionList.show(suggestions) { [favicons] in favicons.known(for: $0.url) }
     }
 
@@ -1066,10 +1070,18 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
             }
         }
         log.info("loaded page \(self.id(of: webView).map(String.init) ?? "popup", privacy: .public): \(webView.title ?? "", privacy: .public)")
-        if let id = id(of: webView), let page = webView.url?.absoluteString, visited[id] != page {
-            visited[id] = page
-            history.visited(page, title: webView.title ?? "")
+        if let id = id(of: webView), let url = webView.url, visited[id] != Self.visitAddress(url) {
+            visited[id] = Self.visitAddress(url)
+            history.visited(url.absoluteString, title: webView.title ?? "")
         }
+    }
+
+    /// History keeps addresses without their #fragment, so an in-page jump then a reload is
+    /// the same address, not a new visit.
+    private static func visitAddress(_ url: URL) -> String {
+        var parts = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        parts?.fragment = nil
+        return parts?.string ?? url.absoluteString
     }
 
     func webView(_ webView: WKWebView, didFail _: WKNavigation!, withError error: Error) { showError(error, in: webView) }

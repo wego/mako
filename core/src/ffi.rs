@@ -124,8 +124,9 @@ pub extern "C" fn mako_history_visit(h: *mut History, cfg: *const c_char, url: *
 
 /// A page's title changed after it loaded. True when the history changed.
 #[no_mangle]
-pub extern "C" fn mako_history_retitle(h: *mut History, url: *const c_char, title: *const c_char) -> bool {
-    unsafe { update(h, |it| history::retitle(it, text(url), text(title))) }
+pub extern "C" fn mako_history_retitle(h: *mut History, cfg: *const c_char, url: *const c_char, title: *const c_char) -> bool {
+    let cfg = config(cfg);
+    unsafe { update(h, |it| history::retitle(&cfg, it, text(url), text(title))) }
 }
 
 /// Forgets every visit. True when there was anything to forget.
@@ -237,8 +238,9 @@ mod tests {
         assert!(!mako_history_visit(h, on.as_ptr(), blocked_url.as_ptr(), title.as_ptr(), 100, 0, 0), "blocked host");
         assert!(mako_history_visit(h, on.as_ptr(), url.as_ptr(), title.as_ptr(), 100, 0, 0));
         let renamed = c("Rust book");
-        assert!(mako_history_retitle(h, url.as_ptr(), renamed.as_ptr()));
-        assert!(!mako_history_retitle(h, url.as_ptr(), renamed.as_ptr()), "the same title is no change");
+        assert!(!mako_history_retitle(h, off.as_ptr(), url.as_ptr(), renamed.as_ptr()), "history off");
+        assert!(mako_history_retitle(h, on.as_ptr(), url.as_ptr(), renamed.as_ptr()));
+        assert!(!mako_history_retitle(h, on.as_ptr(), url.as_ptr(), renamed.as_ptr()), "the same title is no change");
 
         let saved = call(|| mako_history_save(h));
         assert_eq!(saved["entries"][0], serde_json::json!({"url": "https://a.test/rust", "title": "Rust book", "visits": 1, "last_visit": 100}));

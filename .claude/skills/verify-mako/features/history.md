@@ -5,10 +5,10 @@ Mako remembers the web pages it finishes loading in `history.json` beside the co
 ## Sub-features
 
 - `hist-record` a page that finishes loading in a trail is recorded: `{url, title, visits, last_visit}` (unix seconds), the `#fragment` dropped. A repeat visit adds 1 to `visits`, moves `last_visit` and takes the newer title. Only `http` and `https` pages count: never `data:`, `file:` or `about:` pages, a sign-in popup, a block or error notice, nor a host the blocklist blocks at that moment.
-- `hist-once` a page loading the address it already had is no visit: a reload, a page restored at launch, a page loaded again after Mako unloaded it. So a relaunch leaves every count as it was.
+- `hist-once` a page loading the address it already had (ignoring its `#fragment`) is no visit: a reload, an in-page jump then a reload, a page restored at launch, a page loaded again after Mako unloaded it. So a relaunch leaves every count as it was.
 - `hist-title` a title that arrives or changes after the load updates the entry without a visit.
 - `hist-cap` at 5,000 entries a new address replaces the entry with the lowest score, `(1 + ln visits) × 0.5^(age ÷ 30 days)`.
-- `hist-off` `remember_history = false` (default `true`) records nothing and suggests nothing from history; open pages are still suggested. The file is left as it was, so turning history on again brings its suggestions back. Any other value is a config issue (`mako.sidebar.config`) and history stays on.
+- `hist-off` `remember_history = false` (default `true`) records nothing, not even a later title for an address already in it, and suggests nothing from history; open pages are still suggested. The file is left as it was, so turning history on again brings its suggestions back. Any other value is a config issue (`mako.sidebar.config`) and history stays on.
 - `hist-clear` History → Clear History… asks on a sheet (`mako.dialog.ok` Clear History, `mako.dialog.cancel` Cancel). Cancel changes nothing; Clear History empties `history.json` (`"entries":[]`) and the suggestions with it. Open pages and trails stay.
 - `hist-bad-file` a `history.json` Mako cannot read is moved to `history.json.bad` and history starts empty (from source; not driven).
 

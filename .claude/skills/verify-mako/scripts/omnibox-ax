@@ -131,5 +131,22 @@ check clear-empties-the-history within history_is ""
 typed File "New Trail" two
 check nothing-suggested-from-a-cleared-history no_rows
 $M "$P" press-id mako.omnibox.scrim
+
+echo "== a late title with history off"
+go File "Open Location…" "$U/retitle.html"
+check retitle-page-recorded within history_is "retitle.html:1"
+printf 'max_trails = 3\nremember_history = false\n' > "$MAKO_RUN/state/config"; sleep 0.5
+go File "Open Location…" "$U/retitle.html#secret"
+check retitle-page-renamed within sh -c "$M $P title | grep -q 'Renamed #secret'"
+sleep 0.5
+check history-off-keeps-the-old-title titled retitle.html "Retitle"
+printf 'max_trails = 3\n' > "$MAKO_RUN/state/config"; sleep 0.5
+
+echo "== an in-page jump then a reload is no visit"
+go File "Open Location…" "$U/retitle.html#here"
+within sh -c "$M $P title | grep -q 'Renamed #here'"
+$M "$P" menu View Reload; sleep 1.5
+check jump-then-reload-is-no-visit history_is "retitle.html:1"
+
 echo "== $fails failure(s); evidence in $E"
 exit "$fails"

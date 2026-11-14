@@ -21,7 +21,7 @@ char *mako_trails_apply(const char *config, const char *state, const char *actio
 typedef struct mako_history mako_history;
 mako_history *mako_history_load(const char *json);
 bool mako_history_visit(mako_history *history, const char *config, const char *url, const char *title, uint64_t now, uint8_t weekday, uint16_t minute);
-bool mako_history_retitle(mako_history *history, const char *url, const char *title);
+bool mako_history_retitle(mako_history *history, const char *config, const char *url, const char *title);
 bool mako_history_clear(mako_history *history);
 char *mako_history_save(const mako_history *history);
 void mako_history_free(mako_history *history);

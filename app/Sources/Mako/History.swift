@@ -54,7 +54,7 @@ final class HistoryStore {
     }
 
     func retitled(_ url: String, title: String) {
-        if mako_history_retitle(handle, url, title) { save() }
+        if mako_history_retitle(handle, Core.config, url, title) { save() }
     }
 
     func clear() {

@@ -109,7 +109,11 @@ pub fn visit(cfg: &Config, mut history: History, url: &str, title: &str, at: Mom
 }
 
 /// A page's title arrived or changed after it loaded: the entry takes it, with no new visit.
-pub fn retitle(mut history: History, url: &str, title: &str) -> History {
+/// With history off nothing changes, so no title of a page browsed then reaches the disk.
+pub fn retitle(cfg: &Config, mut history: History, url: &str, title: &str) -> History {
+    if !cfg.remember_history {
+        return history;
+    }
     if let Some(entry) = address(url).filter(|_| !title.is_empty()).and_then(|url| history.entries.iter_mut().find(|e| e.url == url)) {
         entry.title = title.into();
     }
@@ -274,10 +278,12 @@ mod tests {
     #[test]
     fn a_late_title_updates_the_entry_without_a_visit() {
         let h = visit(&on(), History::default(), "https://a.test/app#inbox", "", at(NOW));
-        let h = retitle(h, "https://a.test/app#inbox", "Inbox (3)");
+        let h = retitle(&on(), h, "https://a.test/app#inbox", "Inbox (3)");
         assert_eq!(h.entries, [entry("https://a.test/app", "Inbox (3)", 1, NOW)]);
-        assert_eq!(retitle(h.clone(), "https://never.test/", "Nope"), h, "no entry, no change");
-        assert_eq!(retitle(h.clone(), "https://a.test/app", ""), h, "an empty title is not news");
+        assert_eq!(retitle(&on(), h.clone(), "https://never.test/", "Nope"), h, "no entry, no change");
+        assert_eq!(retitle(&on(), h.clone(), "https://a.test/app", ""), h, "an empty title is not news");
+        let off = parse_config("remember_history = false").config;
+        assert_eq!(retitle(&off, h.clone(), "https://a.test/app", "Private"), h, "history off writes nothing");
     }
 
     #[test]
