@@ -176,6 +176,7 @@ pub fn apply(state: &Trails, action: &Action, max_trails: usize) -> Result<Trail
             };
             let at = siblings.iter().position(|c| c == of).unwrap() + 1;
             siblings.insert(at, id);
+            reveal(&mut s, id);
         }
         Action::Navigated { id, url, title } => {
             let n = s.nodes.get_mut(id).ok_or(Error::NoSuchPage(*id))?;
@@ -495,6 +496,14 @@ mod tests {
         assert_eq!(shape(&s), [(0, "a".into()), (1, "b".into()), (2, "d".into()), (1, "x".into()), (1, "c".into()), (0, "e".into())]);
         assert_eq!(s.nodes[&6].parent, Some(1));
         assert_eq!(s.active, Some(6), "the new page is selected");
+    }
+
+    #[test]
+    fn a_sibling_inside_a_collapsed_page_is_revealed() {
+        // d(4) sits under b(2); collapse b, then open a sibling of d.
+        let s = run(&sample(), &[Action::SetCollapsed { id: 2, collapsed: true }, sibling(4, "x")]);
+        assert_eq!(s.active, Some(6));
+        assert!(rows(&s).iter().any(|r| r.id == 6), "the selected new page has a row");
     }
 
     #[test]
