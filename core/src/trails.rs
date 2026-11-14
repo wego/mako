@@ -271,12 +271,17 @@ pub fn apply(state: &Trails, action: &Action, max_trails: usize) -> Result<Trail
 /// free slot, so no two open trails share a colour and none changes while it stays open.
 fn paint(s: &mut Trails) {
     s.colors.retain(|id, _| s.roots.contains(id));
-    for root in &s.roots {
-        if !s.colors.contains_key(root) {
-            let free = (0..=u8::MAX).find(|c| !s.colors.values().any(|v| v == c)).unwrap_or(0);
-            s.colors.insert(*root, free);
+    for root in s.roots.clone() {
+        if !s.colors.contains_key(&root) {
+            let free = next_color(s);
+            s.colors.insert(root, free);
         }
     }
+}
+
+/// The colour slot the next new trail gets: the lowest one no open trail holds.
+pub fn next_color(state: &Trails) -> u8 {
+    (0..=u8::MAX).find(|c| !state.colors.values().any(|v| v == c)).unwrap_or(0)
 }
 
 fn add(s: &mut Trails, parent: Option<Id>, url: &str) -> Id {
@@ -752,6 +757,14 @@ mod tests {
         assert_eq!(colors(&sample()), [(1, 0), (2, 0), (4, 0), (3, 0), (5, 1)]);
         let s = run(&sample(), &[Action::Close { id: 1 }, trail("f")]);
         assert_eq!(colors(&s), [(5, 1), (6, 0)], "a closed trail frees its colour for the next one");
+    }
+
+    #[test]
+    fn next_color_is_the_colour_a_new_trail_gets() {
+        for s in [Trails::default(), sample(), run(&sample(), &[Action::Close { id: 1 }])] {
+            let opened = run(&s, &[trail("n")]);
+            assert_eq!(Some(next_color(&s)), opened.colors.get(&opened.roots[opened.roots.len() - 1]).copied());
+        }
     }
 
     #[test]

@@ -201,7 +201,8 @@ final class Sidebar: NSView {
     // MARK: Dropping between trails
 
     /// The paper between cards takes a dragged page as a trail of its own there; a root
-    /// dropped there reorders the trails.
+    /// dropped there reorders the trails. Dropped just above its own card, a page lands
+    /// before its own root, so the core makes it that trail's root.
     private func gap(at point: NSPoint) -> (root: UInt64, place: DropPlace, lineY: CGFloat)? {
         let cards = stack.arrangedSubviews.compactMap { $0 as? CardView }.map { ($0.root, convert($0.bounds, from: $0)) }
         guard scroll.frame.contains(point), !cards.contains(where: { $0.1.contains(point) }), let last = cards.last else { return nil }

@@ -32,6 +32,25 @@ lum = [sum(b[i:i + 3]) / 3 for yy in range(y, y + h) for i in
        [off + ((H - 1 - yy) if H > 0 else yy) * stride + xx * bpp for xx in range(x, x + w)]]
 sys.exit(0 if max(lum) - min(lum) > 20 else 1)' "$1.bmp" "$ww" $((x - wx)) $((y - wy)) "$w" "$h"
 }
+# ring <png>: the omnibox ring's colour in a window shot, mid top edge: "neutral" for an
+# unsaturated ink, else "slot <n>" for the nearest trail ink (light or dark variant) in reach
+ring() {
+  read -r wx wy ww _ <<<"$($M "$P" window-frame)"; read -r x y w _ <<<"$($M "$P" frame mako.omnibox)"
+  sips -s format bmp "$1" --out "$1.bmp" >/dev/null 2>&1 && python3 -I -c '
+import struct, sys
+b = open(sys.argv[1], "rb").read()
+off, W, H, bpp = struct.unpack_from("<I", b, 10)[0], *struct.unpack_from("<ii", b, 18), struct.unpack_from("<H", b, 28)[0] // 8
+k = W / float(sys.argv[2]); x, y = round(float(sys.argv[3]) * k), round((float(sys.argv[4]) - 0.75) * k)
+i = off + ((H - 1 - y) if H > 0 else y) * ((W * bpp + 3) // 4 * 4) + x * bpp
+px = (b[i + 2], b[i + 1], b[i])
+inks = [(0x839d56, 0x97b561), (0x46648c, 0x92add2), (0xc7735f, 0xe29988), (0xd9902a, 0xebb060), (0x7a4fa0, 0xb690dc),
+        (0x2f7f7a, 0x6cbfb8), (0x8c3a5a, 0xd59ab1), (0x2f6b3a, 0x6fae7c), (0x8a6a3a, 0xc4a274)]
+rgb = lambda h: (h >> 16, h >> 8 & 255, h & 255)
+d, slot = min((sum((a - c) ** 2 for a, c in zip(px, rgb(h))) ** 0.5, n) for n, pair in enumerate(inks) for h in pair)
+print("neutral" if max(px) - min(px) < 30 else f"slot {slot}" if d < 40 else f"unknown {px}")' "$1.bmp" "$ww" $((x - wx + w / 2)) $((y - wy))
+}
+# ringis <png> <expected>: ring's reading, kept in the evidence beside the shot
+ringis() { local got; got=$(ring "$1" 2>&1); echo "$got" > "${1%.png}.ring.txt"; test "$got" = "$2"; }
 # unpainted <png> <ax-id>: the element is in the tree with a frame, but its rect is flat paper
 unpainted() { $M "$P" frame "$2" >/dev/null 2>&1 && ! inked "$@"; }
 omni() { $M "$P" menu File "$1"; sleep 0.3; $M "$P" set mako.omnibox.field "$2"; $M "$P" confirm mako.omnibox.field; sleep "${3:-2}"; }
@@ -128,9 +147,16 @@ check in-place-fix-hides-config-note within sh -c "! $M $P exists mako.sidebar.c
 
 echo "== omnibox"
 check load-hidden-below-cap sh -c "! $M $P exists mako.sidebar.load"
+$M "$P" menu File "Open Location…"; sleep 0.3
+$M "$P" shot "$E/omnibox-this-page-green.png" >/dev/null
+check this-page-ring-is-its-trails-colour ringis "$E/omnibox-this-page-green.png" "slot 0"
+$M "$P" press-id mako.omnibox.scrim; sleep 0.3
 $M "$P" menu File "New Trail"; sleep 0.3
 check no-status-without-a-message sh -c "! $M $P exists mako.omnibox.status"
 check field-names-a-new-trail sh -c "$M $P tree | grep -q 'id=\"mako.omnibox.field\".*desc=\"New trail'"
+check address-placeholder sh -c "$M $P tree | grep -q 'id=\"mako.omnibox.field\".*placeholder=\"Search or enter address\"'"
+$M "$P" shot "$E/omnibox-new-trail.png" >/dev/null
+check new-trail-ring-is-the-next-trails-colour ringis "$E/omnibox-new-trail.png" "slot 1"
 $M "$P" set mako.omnibox.field "$U/c.html?unsent"
 $M "$P" shot "$E/omnibox-white-page.png" >/dev/null
 cp "$J" "$E/pre-scrim.json"
@@ -151,6 +177,8 @@ $M "$P" shot "$E/omnibox-cap-error.png" >/dev/null
 $M "$P" menu File "New Page in Trail"; sleep 0.3
 check reopened-omnibox-drops-the-message sh -c "! $M $P exists mako.omnibox.status"
 check field-names-a-page-beneath sh -c "$M $P tree | grep -q 'id=\"mako.omnibox.field\".*desc=\"New page beneath'"
+$M "$P" shot "$E/omnibox-child-blue.png" >/dev/null
+check page-beneath-ring-is-the-active-trails-colour ringis "$E/omnibox-child-blue.png" "slot 1"
 omni "New Page in Trail" "$U/c.html?child"
 check new-page-is-child is 'n["5"]["parent"]' 4
 omni "Open Location…" "$U/c.html?inplace"
@@ -158,6 +186,7 @@ check open-location-stays-in-page is '(len(n), n["5"]["url"].endswith("inplace")
 omni "Open Location…" "$U/dark.html"
 $M "$P" menu File "Open Location…"; sleep 0.3
 $M "$P" shot "$E/omnibox-dark-page.png" >/dev/null
+check this-page-ring-follows-the-active-trail ringis "$E/omnibox-dark-page.png" "slot 1"
 $M "$P" press-id mako.omnibox.scrim; sleep 0.3
 
 echo "== close and undo"
@@ -192,9 +221,18 @@ $M "$P" set mako.trail.6.name "Mine"; $M "$P" confirm mako.trail.6.name; sleep 0
 check rename is 'n["6"]["name"]' Mine
 check renamed-page-titles-the-window test "$($M "$P" title)" = Mine
 check each-page-listed-once test "$($M "$P" tree | grep -c 'id=\"mako\.trail\.[0-9]*\"')" = "$(q 'len(n)')"
+$M "$P" press-id mako.trail.5; sleep 0.4; $M "$P" menu Trails "Move Page Up"; sleep 0.4
+check move-up-from-first-page-takes-the-root-at-the-cap is '(s["roots"], n["5"]["children"], n["4"]["children"], s["colors"]["5"])' "([1, 5], [4], [6], 1)"
+$M "$P" press-id mako.trail.4; sleep 0.4; $M "$P" menu Trails "Move Page Up"; sleep 0.4
+check move-up-again-gives-the-root-back is '(s["roots"], n["4"]["children"], s["colors"]["4"])' "([1, 4], [5, 6], 1)"
+$M "$P" press-id mako.trail.6; sleep 0.4
 
 echo "== find in page"
-$M "$P" menu Edit "Find…"; sleep 0.3; $M "$P" set mako.omnibox.field "leaf"; $M "$P" confirm mako.omnibox.field; sleep 0.8
+$M "$P" menu Edit "Find…"; sleep 0.3
+check find-placeholder sh -c "$M $P tree | grep -q 'id=\"mako.omnibox.field\".*placeholder=\"Find in page\"'"
+$M "$P" shot "$E/omnibox-find.png" >/dev/null
+check find-ring-is-neutral-ink ringis "$E/omnibox-find.png" neutral
+$M "$P" set mako.omnibox.field "leaf"; $M "$P" confirm mako.omnibox.field; sleep 0.8
 check find-hit sh -c "! $M $P value mako.omnibox.status | grep -q 'Not found'"
 $M "$P" set mako.omnibox.field "zzzqqq"; $M "$P" confirm mako.omnibox.field; sleep 0.8
 check find-miss sh -c "$M $P value mako.omnibox.status | head -1 | grep -q 'Not found'"

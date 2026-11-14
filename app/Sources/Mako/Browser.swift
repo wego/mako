@@ -124,12 +124,20 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
     private let blank = NSImageView()
     /// Kept in sync on every change so the AX tree never depends on the menu being opened.
     let trailsMenu = NSMenu(title: "Trails")
-    /// Everything the open omnibox puts over the window: the scrim, the halo and the panel.
+    /// Everything the open omnibox puts over the window: the scrim, the card and the panel.
     private let omniLayer = NSView()
     private let scrim = Scrim()
-    private let halo = Halo()
-    private let omnibox = NSGlassEffectView()
+    private let card = OmniCard()
+    private let omnibox = NSView()
+    private let glyph = OmniGlyph()
     private let field = OmniboxField()
+    /// The field's own editor, so its caret and selection take the omnibox's colour without
+    /// recolouring the window's shared one (rename fields use that).
+    private let omniEditor: NSTextView = {
+        let editor = NSTextView()
+        editor.isFieldEditor = true
+        return editor
+    }()
     private let hint = NSTextField(labelWithString: "")
     /// An error or message for the open omnibox; it goes when the omnibox next opens.
     private var omniMessage: String?
@@ -480,6 +488,7 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         field.drawsBackground = false
         field.focusRingType = .none
         field.font = OmniboxField.font(18)
+        field.textColor = .ink
         field.usesSingleLineMode = true
         field.cell?.wraps = false
         field.cell?.isScrollable = true
@@ -497,19 +506,23 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         hint.lineBreakMode = .byTruncatingTail
         hint.maximumNumberOfLines = 0
 
-        let stack = NSStackView(views: [field, hint])
+        let line = NSStackView(views: [glyph, field])
+        line.spacing = 10
+        line.distribution = .fill
+        glyph.setContentHuggingPriority(.required, for: .horizontal)
+        let stack = NSStackView(views: [line, hint])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 8
-        stack.edgeInsets = NSEdgeInsets(top: 14, left: 18, bottom: 14, right: 18)
-        omnibox.contentView = stack
-        omnibox.cornerRadius = 18
+        stack.edgeInsets = NSEdgeInsets(top: 14, left: 16, bottom: 14, right: 18)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        omnibox.addSubview(stack)
         scrim.onDismiss = { [unowned self] in hideOmnibox() }
         guard let root = window.contentView else { return }
         omniLayer.isHidden = true
-        for view in [omniLayer, scrim, halo, omnibox] { view.translatesAutoresizingMaskIntoConstraints = false }
+        for view in [omniLayer, scrim, card, omnibox] { view.translatesAutoresizingMaskIntoConstraints = false }
         omniLayer.addSubview(scrim)
-        omniLayer.addSubview(halo)
+        omniLayer.addSubview(card)
         omniLayer.addSubview(omnibox)
         // Over everything, the sidebar too: while it is open, the omnibox is the window's one task.
         root.addSubview(omniLayer, positioned: .above, relativeTo: nil)
@@ -522,14 +535,18 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
             scrim.trailingAnchor.constraint(equalTo: omniLayer.trailingAnchor),
             scrim.topAnchor.constraint(equalTo: omniLayer.topAnchor),
             scrim.bottomAnchor.constraint(equalTo: omniLayer.bottomAnchor),
-            halo.leadingAnchor.constraint(equalTo: omnibox.leadingAnchor, constant: -Halo.inset),
-            halo.trailingAnchor.constraint(equalTo: omnibox.trailingAnchor, constant: Halo.inset),
-            halo.topAnchor.constraint(equalTo: omnibox.topAnchor, constant: -Halo.inset),
-            halo.bottomAnchor.constraint(equalTo: omnibox.bottomAnchor, constant: Halo.inset),
+            card.leadingAnchor.constraint(equalTo: omnibox.leadingAnchor, constant: -OmniCard.inset),
+            card.trailingAnchor.constraint(equalTo: omnibox.trailingAnchor, constant: OmniCard.inset),
+            card.topAnchor.constraint(equalTo: omnibox.topAnchor, constant: -OmniCard.inset),
+            card.bottomAnchor.constraint(equalTo: omnibox.bottomAnchor, constant: OmniCard.inset),
+            stack.leadingAnchor.constraint(equalTo: omnibox.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: omnibox.trailingAnchor),
+            stack.topAnchor.constraint(equalTo: omnibox.topAnchor),
+            stack.bottomAnchor.constraint(equalTo: omnibox.bottomAnchor),
             omnibox.centerXAnchor.constraint(equalTo: container.centerXAnchor),
             omnibox.topAnchor.constraint(equalTo: container.topAnchor, constant: 80),
             omnibox.widthAnchor.constraint(equalTo: container.widthAnchor, multiplier: 0.7),
-            field.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -36),
+            line.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -34),
             // The 18 pt line height at every font size, so the panel never jumps while typing.
             field.heightAnchor.constraint(equalToConstant: OmniboxField.height),
         ])
@@ -545,6 +562,13 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         case .find: "Find in this page"
         }
         field.setAccessibilityLabel(purpose)
+        let look = look(for: target)
+        card.look = look
+        glyph.look = look
+        field.placeholderString = look == .find ? "Find in page" : "Search or enter address"
+        let accent = look.slot.map(NSColor.trail) ?? .ink
+        omniEditor.insertionPointColor = accent
+        omniEditor.selectedTextAttributes = [.backgroundColor: accent.withAlphaComponent(0.3), .foregroundColor: NSColor.ink]
         omniMessage = nil
         updateHint()
         omniLayer.isHidden = false
@@ -552,6 +576,21 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         field.currentEditor()?.selectAll(nil)
         omniLayer.superview?.layoutSubtreeIfNeeded()
         field.fitFont()
+    }
+
+    /// The trail Enter lands in: the active one for this page or a page beneath it, the
+    /// colour the next trail would get for a new one.
+    private func look(for target: OmniTarget) -> OmniLook {
+        switch target {
+        case .current: store.active.map { .page($0.color) } ?? .newTrail(store.nextColor)
+        case .newTrail: .newTrail(store.nextColor)
+        case .child(let parent): .child(store.rows.first { $0.id == parent }?.color ?? store.nextColor)
+        case .find: .find
+        }
+    }
+
+    func windowWillReturnFieldEditor(_ sender: NSWindow, to client: Any?) -> Any? {
+        (client as AnyObject?) === field ? omniEditor : nil
     }
 
     func controlTextDidChange(_ note: Notification) {
@@ -980,11 +1019,26 @@ final class Scrim: NSView {
     }
 }
 
-/// An ink ring and a deep shadow around the omnibox panel, so it reads over any page in
-/// either appearance.
+/// What the omnibox looks like: the trail Enter lands in, and how (a new trail, this page, a
+/// page beneath it), or find, which belongs to no trail.
+enum OmniLook: Equatable {
+    case newTrail(Int), page(Int), child(Int), find
+
+    var slot: Int? {
+        switch self {
+        case .newTrail(let slot), .page(let slot), .child(let slot): slot
+        case .find: nil
+        }
+    }
+}
+
+/// The omnibox panel as a raised sidebar card: the trail's tinted paper inside a 3 pt ring
+/// in the trail's colour. Find gets plain paper and a thin ink ring. A deep shadow lifts
+/// either over any page in either appearance.
 @MainActor
-final class Halo: NSView {
+final class OmniCard: NSView {
     static let inset: CGFloat = 3
+    var look = OmniLook.find { didSet { needsDisplay = true } }
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -1011,10 +1065,57 @@ final class Halo: NSView {
     override func viewDidChangeEffectiveAppearance() { needsLayout = true }
 
     override func draw(_ dirtyRect: NSRect) {
-        let ring = NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 18 + Self.inset - 1, yRadius: 18 + Self.inset - 1)
-        ring.lineWidth = 2
-        NSColor.ink.withAlphaComponent(0.85).setStroke()
+        let panel = bounds.insetBy(dx: Self.inset, dy: Self.inset)
+        let (paper, ink, width): (NSColor, NSColor, CGFloat) = look.slot.map { (.card($0), .trail($0), Self.inset) }
+            ?? (.sidebarPaper, .ink.withAlphaComponent(0.6), 1.5)
+        paper.setFill()
+        NSBezierPath(roundedRect: panel, xRadius: 18, yRadius: 18).fill()
+        let ring = NSBezierPath(roundedRect: panel.insetBy(dx: -width / 2, dy: -width / 2), xRadius: 18 + width / 2, yRadius: 18 + width / 2)
+        ring.lineWidth = width
+        ink.setStroke()
         ring.stroke()
+    }
+}
+
+/// Leads the omnibox field with where Enter lands, drawn as the sidebar draws it: a trail's
+/// root dot for a new trail, a plain dot for this page, a branch for a page beneath. Find
+/// gets a magnifying glass.
+@MainActor
+final class OmniGlyph: NSView {
+    var look = OmniLook.find { didSet { needsDisplay = true } }
+
+    override var intrinsicContentSize: NSSize { NSSize(width: 20, height: 20) }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let mid = NSPoint(x: bounds.midX, y: bounds.midY)
+        func dot(_ radius: CGFloat, _ color: NSColor, at center: NSPoint) {
+            color.setFill()
+            NSBezierPath(ovalIn: NSRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2)).fill()
+        }
+        switch look {
+        case .newTrail(let slot):
+            dot(8, NSColor.trail(slot).withAlphaComponent(0.22), at: mid)
+            dot(5, .trail(slot), at: mid)
+        case .page(let slot):
+            dot(5, .trail(slot), at: mid)
+        case .child(let slot):
+            let branch = NSBezierPath()
+            branch.move(to: NSPoint(x: mid.x - 5, y: mid.y + 9))
+            branch.appendArc(from: NSPoint(x: mid.x - 5, y: mid.y - 2), to: NSPoint(x: mid.x + 3, y: mid.y - 2), radius: 6)
+            branch.line(to: NSPoint(x: mid.x + 3, y: mid.y - 2))
+            branch.lineWidth = 1.5
+            NSColor.trail(slot).withAlphaComponent(0.85).setStroke()
+            branch.stroke()
+            dot(3.5, .trail(slot), at: NSPoint(x: mid.x + 5.5, y: mid.y - 2))
+        case .find:
+            let glass = NSBezierPath(ovalIn: NSRect(x: mid.x - 7, y: mid.y - 2.5, width: 10, height: 10))
+            glass.move(to: NSPoint(x: mid.x + 1.6, y: mid.y - 1.1))
+            glass.line(to: NSPoint(x: mid.x + 6.5, y: mid.y - 6))
+            glass.lineWidth = 1.75
+            glass.lineCapStyle = .round
+            NSColor.ink.withAlphaComponent(0.6).setStroke()
+            glass.stroke()
+        }
     }
 }
 

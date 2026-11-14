@@ -24,7 +24,7 @@ func str(_ e: AXUIElement, _ a: String) -> String? { (attr(e, a) as? String).fla
 func line(_ e: AXUIElement) -> String {
     var parts = [str(e, kAXRoleAttribute) ?? "?"]
     for (k, a) in [("sub", kAXSubroleAttribute), ("id", kAXIdentifierAttribute), ("title", kAXTitleAttribute),
-                   ("desc", kAXDescriptionAttribute), ("value", kAXValueAttribute)] {
+                   ("desc", kAXDescriptionAttribute), ("value", kAXValueAttribute), ("placeholder", "AXPlaceholderValue")] {
         if let s = str(e, a) { parts.append("\(k)=\"\(s.prefix(80).replacingOccurrences(of: "\n", with: "⏎"))\"") }
     }
     if let on = attr(e, "AXMenuItemMarkChar") as? String, !on.isEmpty { parts.append("checked") }
@@ -146,7 +146,15 @@ func failIfDegraded() {
 if args[1] != "shot" { failIfDegraded() }
 
 func mainWindow() -> AXUIElement {
-    guard let window = (attr(app, kAXWindowsAttribute) as? [AXUIElement])?.first(where: { str($0, kAXSubroleAttribute) == kAXStandardWindowSubrole })
+    func area(_ w: AXUIElement) -> Double {
+        var size = CGSize.zero
+        if let v = attr(w, kAXSizeAttribute) { AXValueGetValue(v as! AXValue, .cgSize, &size) }
+        return size.width * size.height
+    }
+    guard let window = (attr(app, kAXWindowsAttribute) as? [AXUIElement])?
+        .filter({ str($0, kAXSubroleAttribute) == kAXStandardWindowSubrole }).max(by: { area($0) < area($1) })
+/// The largest standard window, as `shot` picks: Settings is a standard window too, and
+/// while it is open it can come first in AXWindows.
     else {
         // The screen can lock while wait-title or time-key polls.
         failIfDegraded()
