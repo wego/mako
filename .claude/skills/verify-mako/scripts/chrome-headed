@@ -44,6 +44,14 @@ case "$action" in
      $M "$P" double-click 120 14; sleep 0.8 ;;
 esac
 
+read -r wx wy ww wh <<<"$($M "$P" window-frame)"
+read -r _ _ sw _ <<<"$($M "$P" frame mako.sidebar)"
+$M "$P" drag "$sw" $((wh / 2)) -200 0; sleep 0.4
+check divider-drag-past-minimum-keeps-window moved "$wx" "$wy" 0 0
+check divider-drag-stops-at-minimum test "$($M "$P" value mako.divider)" = 160
+$M "$P" drag 160 $((wh / 2)) 80 0; sleep 0.4
+check divider-edge-follows-pointer test "$($M "$P" value mako.divider)" = 240
+
 echo "== sidebar hidden (⌃⌘S)"
 $M "$P" key ctrl+cmd+s
 check key-hides-sidebar within sh -c "! $M $P exists mako.sidebar"
@@ -60,6 +68,14 @@ check peek-leaves-page-in-place test "$($M "$P" frame mako.page | cut -d' ' -f1)
 $M "$P" shot "$MAKO_RUN/peek.png" >/dev/null 2>&1
 $M "$P" hover $((ww * 3 / 4)) $((wh / 2))
 check leaving-hides-peek within sh -c "! $M $P exists mako.sidebar"
+$M "$P" hover 2 $((wh / 2))
+within $M "$P" exists mako.sidebar.toggle
+$M "$P" click-id mako.sidebar.toggle
+$M "$P" hover $((ww * 3 / 4)) $((wh / 2)); sleep 0.5
+check corner-button-keeps-peek-open $M "$P" exists mako.sidebar
+check kept-open-sidebar-sits-beside-page test "$($M "$P" frame mako.page | cut -d' ' -f1)" -gt "$px"
+$M "$P" key ctrl+cmd+s
+check key-hides-again within sh -c "! $M $P exists mako.sidebar"
 $M "$P" key ctrl+cmd+s
 check key-shows-sidebar within $M "$P" exists mako.sidebar
 

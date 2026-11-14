@@ -45,6 +45,9 @@ check first-card-clears-traffic-lights test $((ty - wy)) -ge 28
 check traffic-lights-shown sh -c "$M $P tree 3 | grep -q AXCloseButton"
 check title-still-names-window test "$($M "$P" title)" = Top
 check menu-offers-hide sh -c "$M $P menu-items View | grep -qx '  Hide Sidebar'"
+read -r sx sy sw sh <<<"$($M "$P" frame mako.sidebar)"
+read -r bx by bw bh <<<"$($M "$P" frame mako.sidebar.toggle)"
+check corner-button-bottom-right test $((sx + sw - bx - bw)) -le 16 -a $((sy + sh - by - bh)) -le 16
 $M "$P" shot "$MAKO_RUN/shown-fresh.png" >/dev/null 2>&1
 check page-painted-beside-sidebar painted "$MAKO_RUN/shown-fresh.png"
 
@@ -58,6 +61,13 @@ check menu-offers-show sh -c "$M $P menu-items View | grep -qx '  Show Sidebar'"
 check trails-menu-still-navigates sh -c "$M $P menu-items Trails | grep -q 'Top'"
 $M "$P" shot "$MAKO_RUN/hidden.png" >/dev/null 2>&1
 check page-painted-full-width painted "$MAKO_RUN/hidden.png"
+
+echo "== corner button hides it too"
+$M "$P" menu View "Show Sidebar"
+within $M "$P" exists mako.sidebar.toggle
+$M "$P" press-id mako.sidebar.toggle
+check corner-button-hides-sidebar within sh -c "! $M $P exists mako.sidebar"
+check corner-button-flips-menu sh -c "$M $P menu-items View | grep -qx '  Show Sidebar'"
 
 echo "== hidden survives a restart"
 $C relaunch >/dev/null 2>&1; P=$($C pid); sleep 3

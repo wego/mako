@@ -181,10 +181,10 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
         sidebar.iconFor = { [unowned self] in favicons.icon(for: $0.url) }
         sidebar.onOpenConfig = { [unowned self] in openConfig(nil) }
         favicons.onChange = { [unowned self] in sidebar.refreshIcons() }
-        divider.onDrag = { [unowned self] in setSidebarWidth(sidebarWidth.constant + $0) }
         divider.onSet = { [unowned self] in setSidebarWidth($0) }
 
         sidebar.onExit = { [unowned self] in if sidebarState == .peeking { setSidebar(.hidden) } }
+        sidebar.onToggleSidebar = { [unowned self] in toggleSidebar(nil) }
         edge.onEnter = { [unowned self] in if sidebarState == .hidden { setSidebar(.peeking) } }
 
         let root = NSView()
@@ -251,6 +251,7 @@ final class Browser: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDeleg
             window.standardWindowButton(button)?.isHidden = state == .hidden
         }
         sidebar.floats = state == .peeking
+        sidebar.setPeeking(state == .peeking)
         let slid = state == .hidden ? -sidebarWidth.constant : 0
         if state == .hidden, from == .shown {
             sidebarLeading.constant = slid

@@ -64,6 +64,9 @@ final class Sidebar: NSView {
     var onOpenConfig: () -> Void = {}
     /// The pointer left the sidebar.
     var onExit: () -> Void = {}
+    /// The corner button: hides the sidebar, or keeps a peeking one open.
+    var onToggleSidebar: () -> Void = {}
+    private let sidebarButton = NSButton()
     /// Peeking over the page: a shadow lifts it off the page beneath.
     var floats = false { didSet { layer?.shadowOpacity = floats ? 0.28 : 0 } }
 
@@ -124,8 +127,33 @@ final class Sidebar: NSView {
         layer?.shadowRadius = 14
         layer?.shadowOffset = CGSize(width: 3, height: 0)
         rowsTop = scroll.topAnchor.constraint(equalTo: topAnchor)
-        rowsToBottom = scroll.bottomAnchor.constraint(equalTo: bottomAnchor)
+        // A plain outline split a third of the way in: SF Symbols' sidebar.left adds row lines.
+        let icon = NSImage(size: NSSize(width: 17, height: 14), flipped: false) { rect in
+            let frame = rect.insetBy(dx: 0.75, dy: 0.75)
+            let path = NSBezierPath(roundedRect: frame, xRadius: 3, yRadius: 3)
+            path.move(to: NSPoint(x: frame.minX + 5.5, y: frame.minY))
+            path.line(to: NSPoint(x: frame.minX + 5.5, y: frame.maxY))
+            path.lineWidth = 1.5
+            NSColor.black.setStroke()
+            path.stroke()
+            return true
+        }
+        icon.isTemplate = true
+        sidebarButton.image = icon
+        sidebarButton.isBordered = false
+        sidebarButton.contentTintColor = .ink.withAlphaComponent(0.5)
+        sidebarButton.target = self
+        sidebarButton.action = #selector(toggleSidebarPressed)
+        sidebarButton.setAccessibilityIdentifier("mako.sidebar.toggle")
+        sidebarButton.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(sidebarButton)
+        setPeeking(false)
+        // The cards stop above the corner button's row.
+        rowsToBottom = scroll.bottomAnchor.constraint(equalTo: sidebarButton.topAnchor, constant: -6)
         rowsToFooter = scroll.bottomAnchor.constraint(equalTo: footer.topAnchor, constant: -6)
+        // A footer note shorter than the corner button must not pull the cards over it.
+        rowsToFooter.priority = .defaultHigh
+        scroll.bottomAnchor.constraint(lessThanOrEqualTo: sidebarButton.topAnchor, constant: -6).isActive = true
         setAccessibilityElement(true)
         setAccessibilityRole(.list)
         setAccessibilityIdentifier("mako.sidebar")
@@ -134,7 +162,11 @@ final class Sidebar: NSView {
             rowsTop,
             rowsToBottom,
             footer.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 20),
-            footer.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
+            footer.trailingAnchor.constraint(equalTo: sidebarButton.leadingAnchor, constant: -8),
+            sidebarButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
+            sidebarButton.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -10),
+            sidebarButton.widthAnchor.constraint(equalToConstant: 22),
+            sidebarButton.heightAnchor.constraint(equalToConstant: 22),
             footer.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -10),
             scroll.leadingAnchor.constraint(equalTo: leadingAnchor),
             scroll.trailingAnchor.constraint(equalTo: trailingAnchor),
@@ -163,6 +195,15 @@ final class Sidebar: NSView {
         rowsTop.isActive = true
     }
 
+    /// Peeking, the corner button keeps the sidebar open; otherwise it hides it.
+    func setPeeking(_ peeking: Bool) {
+        let title = peeking ? "Keep Sidebar Open" : "Hide Sidebar"
+        sidebarButton.toolTip = "\(title) (⌃⌘S)"
+        sidebarButton.setAccessibilityLabel(title)
+    }
+
+    @objc private func toggleSidebarPressed() { onToggleSidebar() }
+
     // MARK: Moving the window
 
     /// The paper between and around the cards moves the window, as a title bar would.
@@ -171,6 +212,9 @@ final class Sidebar: NSView {
         return hit === self || hit === scroll || hit === scroll.contentView || hit === scroll.documentView || hit === stack ? self : hit
     }
     override func mouseDown(with event: NSEvent) { window?.moveOrZoom(event) }
+    /// Moves happen only from a mouse-down here. Left at AppKit's default, a drag that began
+    /// on the divider moved the window once the pointer crossed onto the paper.
+    override var mouseDownCanMoveWindow: Bool { false }
     override func scrollWheel(with event: NSEvent) { scroll.scrollWheel(with: event) }
 
     override func updateTrackingAreas() {
@@ -574,7 +618,6 @@ private final class RowView: NSView, NSDraggingSource, NSTextFieldDelegate {
 /// The draggable edge between the sidebar and the page.
 @MainActor
 final class DividerView: NSView {
-    var onDrag: (CGFloat) -> Void = { _ in }
     /// Accessibility clients set the sidebar width in points, which is how runs resize it.
     var onSet: (CGFloat) -> Void = { _ in }
     /// The sidebar's current width, reported as the accessibility value.
@@ -594,6 +637,14 @@ final class DividerView: NSView {
         NSRect(x: bounds.midX - 0.5, y: 0, width: 1, height: bounds.height).fill()
     }
     override func resetCursorRects() { addCursorRect(bounds, cursor: .resizeLeftRight) }
-    override func mouseDragged(with event: NSEvent) { onDrag(event.deltaX) }
+    private var dragStart: (x: CGFloat, width: CGFloat)?
+    /// Handled here so the press never travels up to the window, which could start a move.
+    override func mouseDown(with event: NSEvent) { dragStart = (event.locationInWindow.x, width) }
+    override func mouseDragged(with event: NSEvent) {
+        guard let dragStart else { return }
+        // From the press, not per-event deltas, so the edge stays under the pointer.
+        onSet(dragStart.width + event.locationInWindow.x - dragStart.x)
+    }
+    override func mouseUp(with event: NSEvent) { dragStart = nil }
     override var mouseDownCanMoveWindow: Bool { false }
 }
