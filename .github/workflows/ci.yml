@@ -9,24 +9,26 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Not here: the Rust timing budget, which is wall-clock noise on a shared VM and runs in the
+# local `perf`/`smoke` loop, and the DMG, which release.yml builds from every green main.
 jobs:
-  test:
-    # Mako uses macOS 26 APIs (NSGlassEffectView), so it needs the macOS 26 SDK.
-    runs-on: macos-26
+  core:
+    # Portable Rust, so a Linux runner, in parallel with the macOS build.
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
       - name: Rust core tests
         run: cargo test --manifest-path core/Cargo.toml
 
-      - name: Rust core performance budget (release build)
-        run: cargo test --release --manifest-path core/Cargo.toml -- --ignored --nocapture perf_budget
+  app:
+    # Mako uses macOS 26 APIs (NSGlassEffectView), so it needs the macOS 26 SDK.
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
       - name: Build and bundle the app
         run: script/bundle
-
-      - name: Package the DMG
-        run: script/dmg
 
       - name: Compile the verification harness
         run: swiftc -O .claude/skills/verify-mako/scripts/makoctl.swift -o "$RUNNER_TEMP/makoctl"

@@ -36,7 +36,7 @@ Mako's own shortcuts (⌘T ⌥⌘T ⇧⌘T ⌘W ⌘L ⌘1…⌘9 ⌘. ⌘, ⌥�
 
 ## Releases
 
-CI (`.github/workflows/ci.yml`) runs the Rust tests, the core performance budget, the app build, DMG packaging, and `doc-check` on every pull request and push. When CI passes on `main`, `.github/workflows/release.yml` builds `Mako-0.1.<run>.dmg` and publishes it as a GitHub Release. Release builds are ad hoc signed and not notarized: on first launch, right-click Mako.app and choose Open. The UI checks (`verify-mako` smoke, perf) need a Mac with Accessibility and Screen Recording permission, so they run locally, not in CI.
+CI (`.github/workflows/ci.yml`) runs the Rust tests (on Linux), the app build, the harness compile and `doc-check` on every pull request and push. The core performance budget runs locally (`perf`, part of `smoke`), since wall-clock timing on a shared CI machine is noise. When CI passes on `main`, `.github/workflows/release.yml` builds `Mako-0.1.<run>.dmg` and publishes it as a GitHub Release. Release builds are ad hoc signed and not notarized: on first launch, right-click Mako.app and choose Open. The UI checks (`verify-mako` smoke, perf) need a Mac with Accessibility and Screen Recording permission, so they run locally, not in CI.
 
     script/bundle && script/dmg      # local DMG: build/Mako-<version>.dmg
 
